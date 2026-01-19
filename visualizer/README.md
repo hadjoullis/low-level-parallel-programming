@@ -29,16 +29,16 @@ Create a virtual environment.  This will create a virtual environment in .venv.
 Activate the venv and install the required packages:
 
 ```
-$ python3 -m venv .venv
-$ source .venv/bin/activate
-(.venv) $ pip3 install -r requirements.txt
+$ python3 -m venv venv
+$ source venv/bin/activate
+(venv) $ pip3 install -r requirements.txt
 ```
 
 ### Enabling the venv after the initial installation
 
 If you are setting up your virtual environment on your own machine.
 ```
-$ source .venv/bin/activate
+$ source venv/bin/activate
 ```
 
 
@@ -55,7 +55,7 @@ whatever you named your export trace output file should be in the directory
 that you executed the `demo` executable from.
 
 ```
-(.venv) $ python3 visualize_export.py ../demo/export_trace.bin
+(venv) $ python3 visualize_export.py ../demo/export_trace.bin
 ```
 
 Once you execute this a Python GUI window will pop up with the bottoms on the
