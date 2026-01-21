@@ -1,6 +1,12 @@
 # Prerequisites
 *.d
+
+# extras
 venv/
+demo/Makefile
+demo/config.mk
+*.bin
+libpedsim/Makefile
 
 # Compiled Object files
 *.slo
