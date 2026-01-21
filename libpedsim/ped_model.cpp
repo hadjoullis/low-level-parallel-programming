@@ -45,6 +45,20 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 void Ped::Model::tick()
 {
 	// EDIT HERE FOR ASSIGNMENT 1
+	switch (this->implementation) {
+	case Ped::SEQ:
+			for (auto agent: this->agents) {
+				agent->computeNextDesiredPosition();
+				int x = agent->getDesiredX();
+				int y = agent->getDesiredY();
+				agent->setX(x);
+				agent->setY(y);
+			}
+			break;
+	default:
+		fprintf(stderr, "ERROR: NOT IMPLEMENTED\n");
+		exit(1);
+	}
 }
 
 ////////////
