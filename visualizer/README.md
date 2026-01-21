@@ -32,6 +32,8 @@ Activate the venv and install the required packages:
 $ python3 -m venv venv
 $ source venv/bin/activate
 (venv) $ pip3 install -r requirements.txt
+# if using arch linux also install
+(venv) $ pip3 install pyqt6
 ```
 
 ### Enabling the venv after the initial installation

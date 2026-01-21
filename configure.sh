@@ -18,6 +18,15 @@ is_ubuntu() {
     fi
 }
 
+# Function to check if the current system is Arch
+is_arch() {
+    if [[ -f /etc/os-release ]] && grep -q "Arch" /etc/os-release; then
+        return 0  # True
+    else
+        return 1  # False
+    fi
+}
+
 # Function to create or overwrite a symbolic link
 create_symlink() {
     local target_file=$1
@@ -70,15 +79,15 @@ if is_macos; then
     echo "CUDA_AVAILABLE=" > "$demo_dir/config.mk"
     echo "Created config.mk with CUDA_AVAILABLE unset."
 
-elif is_ubuntu; then
-    echo "Running on an Ubuntu system."
+elif is_ubuntu || is_arch; then
+    echo "Running on a supported (Ubuntu|Arch) system."
 
     # Define directories
     demo_dir="./demo"
     libpedsim_dir="./libpedsim"
 
     # Check for QT5 and create appropriate link in demo directory
-    if check_qt5; then
+    if is_ubuntu && check_qt5; then
         demo_makefile="Makefile.qt"
     else
         demo_makefile="Makefile.noqt"
