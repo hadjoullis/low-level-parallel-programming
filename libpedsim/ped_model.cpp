@@ -42,19 +42,60 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 	setupHeatmapSeq();
 }
 
+#define NUM_THREADS 8
+void Ped::Model::pthread_tick(int id) {
+	auto& agents = this->agents;
+	const int n = agents.size();
+	int start = id * n / NUM_THREADS;
+	int end = (id + 1) * n / NUM_THREADS;
+	if (id == NUM_THREADS - 1) { end = n; }
+
+	for (int i = start; i < end; i++) {
+		auto* agent = agents[i];
+		agent->computeNextDesiredPosition();
+		int x = agent->getDesiredX();
+		int y = agent->getDesiredY();
+		agent->setX(x);
+		agent->setY(y);
+	}
+}
+
 void Ped::Model::tick()
 {
 	// EDIT HERE FOR ASSIGNMENT 1
 	switch (this->implementation) {
-	case Ped::SEQ:
-			for (auto agent: this->agents) {
-				agent->computeNextDesiredPosition();
-				int x = agent->getDesiredX();
-				int y = agent->getDesiredY();
-				agent->setX(x);
-				agent->setY(y);
-			}
-			break;
+	case Ped::SEQ: {
+		for (auto* const agent: this->agents) {
+			agent->computeNextDesiredPosition();
+			int x = agent->getDesiredX();
+			int y = agent->getDesiredY();
+			agent->setX(x);
+			agent->setY(y);
+		}
+		break;
+	}
+	case Ped::OMP: {
+		auto& agents = this->agents;
+		const int n = agents.size();
+		#pragma omp parallel for schedule(static) default(none) shared(n,agents)
+		for (int i = 0; i < n; i++) {
+			auto* agent = agents[i];
+			agent->computeNextDesiredPosition();
+			int x = agent->getDesiredX();
+			int y = agent->getDesiredY();
+			agent->setX(x);
+			agent->setY(y);
+		}
+		break;
+	}
+	case Ped::PTHREAD: {
+		std::vector<std::thread> tid(NUM_THREADS);
+		for (int i = 0; i < NUM_THREADS; i++) {
+			tid[i] = std::thread(&Ped::Model::pthread_tick, this, i);
+		}
+		for (auto& t: tid) { t.join(); }
+		break;
+	}
 	default:
 		fprintf(stderr, "ERROR: NOT IMPLEMENTED\n");
 		exit(1);
