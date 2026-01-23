@@ -2,7 +2,7 @@
 
 SCENARIO="hugeScenario.xml"
 LOG="results.log"
-THREADS=(1 2 4 8 16 32)
+THREADS=(1 2 4 8 16)
 RUNS=10
 SCALE=6
 
