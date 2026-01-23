@@ -78,7 +78,7 @@ void Ped::Model::tick()
 		auto& agents = this->agents;
 		const int n = agents.size();
 
-		#pragma omp parallel for schedule(static) default(none) shared(n,agents)
+		#pragma omp parallel for default(none) shared(n,agents)
 		for (int i = 0; i < n; i++) {
 			auto* agent = agents[i];
 			agent->computeNextDesiredPosition();
