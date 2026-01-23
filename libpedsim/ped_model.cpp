@@ -42,13 +42,13 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 	setupHeatmapSeq();
 }
 
-#define NUM_THREADS 8
-void Ped::Model::pthread_tick(int id) {
+void Ped::Model::pthread_tick(const int k, int id) {
 	auto& agents = this->agents;
 	const int n = agents.size();
-	int start = id * n / NUM_THREADS;
-	int end = (id + 1) * n / NUM_THREADS;
-	if (id == NUM_THREADS - 1) { end = n; }
+
+	int start = id * n / k;
+	int end = (id + 1) * n / k;
+	if (id == k - 1) { end = n; }
 
 	for (int i = start; i < end; i++) {
 		auto* agent = agents[i];
@@ -89,9 +89,16 @@ void Ped::Model::tick()
 		break;
 	}
 	case Ped::PTHREAD: {
-		std::vector<std::thread> tid(NUM_THREADS);
-		for (int i = 0; i < NUM_THREADS; i++) {
-			tid[i] = std::thread(&Ped::Model::pthread_tick, this, i);
+		static bool once = true;
+		static int PTHREAD_NUM_THREADS = 8;
+		if (once) {
+			char *retval = getenv("PTHREAD_NUM_THREADS");
+			if (retval) { PTHREAD_NUM_THREADS = atoi(retval); }
+			once = false;
+		}
+		std::vector<std::thread> tid(PTHREAD_NUM_THREADS);
+		for (int i = 0; i < PTHREAD_NUM_THREADS; i++) {
+			tid[i] = std::thread(&Ped::Model::pthread_tick, this, PTHREAD_NUM_THREADS, i);
 		}
 		for (auto& t: tid) { t.join(); }
 		break;

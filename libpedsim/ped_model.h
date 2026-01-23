@@ -61,7 +61,7 @@ namespace Ped{
 		// The waypoints in this scenario
 		std::vector<Twaypoint*> destinations;
 
-		void pthread_tick(int id);
+		void pthread_tick(const int k, int id);
 
 		// Moves an agent towards its next position
 		void move(Ped::Tagent *agent);
