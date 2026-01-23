@@ -46,15 +46,15 @@ void Ped::Model::pthread_tick(const int k, int id) {
 	auto& agents = this->agents;
 	const int n = agents.size();
 
-	int start = id * n / k;
-	int end = (id + 1) * n / k;
-	if (id == k - 1) { end = n; }
+	const int chunk_sz = n / k;
+	const int start = id * chunk_sz;
+	const int end = ((id != k - 1) ? ((id + 1) * chunk_sz) : n);
 
 	for (int i = start; i < end; i++) {
 		auto* agent = agents[i];
 		agent->computeNextDesiredPosition();
-		int x = agent->getDesiredX();
-		int y = agent->getDesiredY();
+		const int x = agent->getDesiredX();
+		const int y = agent->getDesiredY();
 		agent->setX(x);
 		agent->setY(y);
 	}
@@ -67,8 +67,8 @@ void Ped::Model::tick()
 	case Ped::SEQ: {
 		for (auto* const agent: this->agents) {
 			agent->computeNextDesiredPosition();
-			int x = agent->getDesiredX();
-			int y = agent->getDesiredY();
+			const int x = agent->getDesiredX();
+			const int y = agent->getDesiredY();
 			agent->setX(x);
 			agent->setY(y);
 		}
@@ -77,12 +77,13 @@ void Ped::Model::tick()
 	case Ped::OMP: {
 		auto& agents = this->agents;
 		const int n = agents.size();
+
 		#pragma omp parallel for schedule(static) default(none) shared(n,agents)
 		for (int i = 0; i < n; i++) {
 			auto* agent = agents[i];
 			agent->computeNextDesiredPosition();
-			int x = agent->getDesiredX();
-			int y = agent->getDesiredY();
+			const int x = agent->getDesiredX();
+			const int y = agent->getDesiredY();
 			agent->setX(x);
 			agent->setY(y);
 		}
@@ -96,7 +97,7 @@ void Ped::Model::tick()
 			if (retval) { PTHREAD_NUM_THREADS = atoi(retval); }
 			once = false;
 		}
-		std::vector<std::thread> tid(PTHREAD_NUM_THREADS);
+		static std::vector<std::thread> tid(PTHREAD_NUM_THREADS);
 		for (int i = 0; i < PTHREAD_NUM_THREADS; i++) {
 			tid[i] = std::thread(&Ped::Model::pthread_tick, this, PTHREAD_NUM_THREADS, i);
 		}
