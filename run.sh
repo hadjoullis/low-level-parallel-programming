@@ -1,5 +1,6 @@
 #!/bin/bash
 
+SCENARIO="hugeScenario.xml"
 LOG="results.log"
 THREADS=(1 2 4 8 16 32)
 RUNS=10
@@ -13,13 +14,13 @@ run_omp_static() {
         sum=0
         for ((i=1; i<=RUNS; i++)); do
             value=$(OMP_SCHEDULE=static OMP_NUM_THREADS="$threads" \
-                        demo/demo --omp --timing hugeScenario.xml \
+                        demo/demo --omp --timing "$SCENARIO" \
                         | grep '^Speedup' \
                         | cut -d' ' -f2)
             sum=$(bc <<< "scale=$SCALE; $sum + $value")
         done
         avg=$(bc <<< "scale=$SCALE; $sum / $RUNS")
-        printf "(OMP_STATIC, %d) -> %.*f\n" "$threads" "$RUNS" "$avg" >> "$LOG"
+        printf "(OMP_STATIC, %d) -> %.*f\n" "$threads" "$SCALE" "$avg" >> "$LOG"
     done
 
     echo "Running OMP static complete"
@@ -36,13 +37,13 @@ run_omp_dynamic() {
             sum=0
             for ((i=1; i<=RUNS; i++)); do
                 value=$(OMP_SCHEDULE="dynamic,$chunk_sz" OMP_NUM_THREADS="$threads" \
-                            demo/demo --omp --timing hugeScenario.xml \
+                            demo/demo --omp --timing "$SCENARIO" \
                             | grep '^Speedup' \
                             | cut -d' ' -f2)
                 sum=$(bc <<< "scale=$SCALE; $sum + $value")
             done
             avg=$(bc <<< "scale=$SCALE; $sum / $RUNS")
-            printf "(OMP_DYNAMIC, %d, %d) -> %.*f\n" "$threads" "$chunk_sz" "$RUNS" "$avg" >> "$LOG"
+            printf "(OMP_DYNAMIC, %d, %d) -> %.*f\n" "$threads" "$chunk_sz" "$SCALE" "$avg" >> "$LOG"
         done
     done
 
@@ -58,13 +59,13 @@ run_pthread_static() {
         sum=0
         for ((i=1; i<=RUNS; i++)); do
             value=$(PTHREAD_NUM_THREADS="$threads" \
-                        demo/demo --pthread --timing hugeScenario.xml \
+                        demo/demo --pthread --timing "$SCENARIO" \
                         | grep '^Speedup' \
                         | cut -d' ' -f2)
             sum=$(bc <<< "scale=$SCALE; $sum + $value")
         done
         avg=$(bc <<< "scale=$SCALE; $sum / $RUNS")
-        printf "(PTHREAD_STATIC, %d) -> %.*f\n" "$threads" "$RUNS" "$avg" >> "$LOG"
+        printf "(PTHREAD_STATIC, %d) -> %.*f\n" "$threads" "$SCALE" "$avg" >> "$LOG"
     done
 
     echo "Running PTHREAD static complete"
