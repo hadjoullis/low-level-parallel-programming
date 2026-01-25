@@ -5,6 +5,18 @@ LOG="results.log"
 THREADS=(1 2 4 8 16)
 RUNS=10
 SCALE=6
+USE_SRUN=0
+
+run_demo() {
+    local threads=$1
+    shift
+
+    if (( USE_SRUN )); then
+        srun -n 1 -c "$threads" demo/demo "$@" 2>/dev/null
+    else
+        demo/demo "$@" 2>/dev/null
+    fi
+}
 
 run_omp_static() {
     echo "Running OMP static..."
@@ -14,7 +26,7 @@ run_omp_static() {
         sum=0
         for ((i=1; i<=RUNS; i++)); do
             value=$(OMP_SCHEDULE=static OMP_NUM_THREADS="$threads" \
-                        demo/demo --omp --timing "$SCENARIO" \
+                        run_demo "$threads" --omp --timing "$SCENARIO" \
                         | grep '^Speedup' \
                         | cut -d' ' -f2)
             sum=$(bc <<< "scale=$SCALE; $sum + $value")
@@ -37,7 +49,7 @@ run_omp_dynamic() {
             sum=0
             for ((i=1; i<=RUNS; i++)); do
                 value=$(OMP_SCHEDULE="dynamic,$chunk_sz" OMP_NUM_THREADS="$threads" \
-                            demo/demo --omp --timing "$SCENARIO" \
+                            run_demo "$threads" --omp --timing "$SCENARIO" \
                             | grep '^Speedup' \
                             | cut -d' ' -f2)
                 sum=$(bc <<< "scale=$SCALE; $sum + $value")
@@ -59,7 +71,7 @@ run_pthread_static() {
         sum=0
         for ((i=1; i<=RUNS; i++)); do
             value=$(PTHREAD_NUM_THREADS="$threads" \
-                        demo/demo --pthread --timing "$SCENARIO" \
+                        run_demo "$threads" --pthread --timing "$SCENARIO" \
                         | grep '^Speedup' \
                         | cut -d' ' -f2)
             sum=$(bc <<< "scale=$SCALE; $sum + $value")
@@ -71,7 +83,10 @@ run_pthread_static() {
     echo "Running PTHREAD static complete"
 }
 
-
+if [[ "$1" == "--srun" ]]; then
+    echo "Using srun..."
+    USE_SRUN=1
+fi
 [ -f "$LOG" ] && mv -v "$LOG" "$LOG.old"
 
 echo "Running benchmarks..."
