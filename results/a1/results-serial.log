@@ -1,0 +1,27 @@
+##########################################################
+(SCENARIO, MAX_STEPS) -> TIME[s]
+(hugeScenario.xml, 2000) -> 0.172000
+(hugeScenario.xml, 4000) -> 0.346000
+(hugeScenario.xml, 8000) -> 0.690200
+(hugeScenario.xml, 16000) -> 1.379400
+(hugeScenario.xml, 32000) -> 2.745300
+(hugeScenario.xml, 64000) -> 5.543100
+(hugeScenario.xml, 128000) -> 11.039200
+##########################################################
+(SCENARIO, MAX_STEPS) -> TIME[s]
+(scenario_box.xml, 2000) -> 0.000200
+(scenario_box.xml, 4000) -> 0.001000
+(scenario_box.xml, 8000) -> 0.003000
+(scenario_box.xml, 16000) -> 0.007100
+(scenario_box.xml, 32000) -> 0.014300
+(scenario_box.xml, 64000) -> 0.029700
+(scenario_box.xml, 128000) -> 0.060300
+##########################################################
+(SCENARIO, MAX_STEPS) -> TIME[s]
+(scenario.xml, 2000) -> 0.029200
+(scenario.xml, 4000) -> 0.059000
+(scenario.xml, 8000) -> 0.117200
+(scenario.xml, 16000) -> 0.235700
+(scenario.xml, 32000) -> 0.467100
+(scenario.xml, 64000) -> 0.930800
+(scenario.xml, 128000) -> 1.848500
