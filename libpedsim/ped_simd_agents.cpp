@@ -6,9 +6,6 @@
 // Adapted for Low Level Parallel Programming 2017
 //
 #include "ped_simd_agents.h"
-#include <math.h>
-
-#include <stdlib.h>
 
 void struct_agents_computeNextDesiredPosition(struct agents *agents, const size_t agent_idx) {
 	ssize_t nextDestination_idx = -1;

@@ -16,7 +16,10 @@
 #ifndef _ped_simd_agents_h_
 #define _ped_simd_agents_h_ 1
 
+#include <math.h>
+#include <stddef.h>
 #include <stdlib.h>
+#include <sys/types.h>
 
 // (x,y): position of the waypoint
 // r: radius defines the area of this waypoint, i.e. a circular area with the
