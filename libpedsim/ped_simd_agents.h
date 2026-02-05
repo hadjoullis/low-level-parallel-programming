@@ -40,6 +40,6 @@ struct agents {
 };
 
 // Update the position according to get closer to the current destination
-void struct_agents_computeNextDesiredPosition(struct agents *agents, const size_t agent_idx);
+void simd_computeNextDesiredPosition(const struct agents *agents, const size_t agent_idx);
 
 #endif

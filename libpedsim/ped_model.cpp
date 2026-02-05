@@ -147,7 +147,7 @@ void Ped::Model::tick()
 	}
 	case Ped::VECTOR: {
 		for (size_t i = 0; i < agents_s.size; i++) {
-			struct_agents_computeNextDesiredPosition(&agents_s, i);
+			simd_computeNextDesiredPosition(&agents_s, i);
 			agents_s.x[i] = agents_s.desiredPositionX[i];
 			agents_s.y[i] = agents_s.desiredPositionY[i];
 		}
