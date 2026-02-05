@@ -13,8 +13,8 @@
 // is handled in ped_model.cpp. 
 //
 
-#ifndef _ped_struct_agents_h_
-#define _ped_struct_agents_h_ 1
+#ifndef _ped_simd_agents_h_
+#define _ped_simd_agents_h_ 1
 
 #include <stdlib.h>
 

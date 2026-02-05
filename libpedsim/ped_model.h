@@ -16,7 +16,7 @@
 #include <set>
 
 #include "ped_agent.h"
-#include "ped_struct_agents.h"
+#include "ped_simd_agents.h"
 
 namespace Ped{
 	class Tagent;

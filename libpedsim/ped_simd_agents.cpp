@@ -5,7 +5,7 @@
 //
 // Adapted for Low Level Parallel Programming 2017
 //
-#include "ped_struct_agents.h"
+#include "ped_simd_agents.h"
 #include <math.h>
 
 #include <stdlib.h>
