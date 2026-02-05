@@ -16,10 +16,10 @@ void simd_computeNextDesiredPosition(const struct agents *agents, const size_t a
 	if (agents->destination_idx[agent_idx] != -1) {
 		// compute if agent reached its current destination
 		const ssize_t dst_idx = agents->destination_idx[agent_idx];
-		double diffX = agents->waypoints.x[agent_idx][dst_idx] - agent_x;
-		double diffY = agents->waypoints.y[agent_idx][dst_idx] - agent_y;
-		double length = sqrt(diffX * diffX + diffY * diffY);
-		agentReachedDestination = length < agents->waypoints.r[agent_idx][dst_idx];
+		const double diffX = agents->waypoints.x[agent_idx][dst_idx] - agent_x;
+		const double diffY = agents->waypoints.y[agent_idx][dst_idx] - agent_y;
+		const double len = sqrt(diffX * diffX + diffY * diffY);
+		agentReachedDestination = len < agents->waypoints.r[agent_idx][dst_idx];
 	}
 
 	if ((agentReachedDestination || agents->destination_idx[agent_idx] == -1)
@@ -46,9 +46,9 @@ void simd_computeNextDesiredPosition(const struct agents *agents, const size_t a
 	}
 
 	const ssize_t dst_idx = agents->destination_idx[agent_idx];
-	double diffX = agents->waypoints.x[agent_idx][dst_idx] - agent_x;
-	double diffY = agents->waypoints.y[agent_idx][dst_idx] - agent_y;
-	double len = sqrt(diffX * diffX + diffY * diffY);
+	const double diffX = agents->waypoints.x[agent_idx][dst_idx] - agent_x;
+	const double diffY = agents->waypoints.y[agent_idx][dst_idx] - agent_y;
+	const double len = sqrt(diffX * diffX + diffY * diffY);
 	agents->desiredPositionX[agent_idx] = (int)round(agent_x + diffX / len);
 	agents->desiredPositionY[agent_idx] = (int)round(agent_y + diffY / len);
 }

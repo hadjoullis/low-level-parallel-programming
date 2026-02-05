@@ -44,6 +44,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 	if (implementation != Ped::VECTOR) {
 		return;
 	}
+	agents_s = {0};
 	const size_t agents_size = agentsInScenario.size();
 	const size_t align = 16;
 	posix_memalign((void **)&agents_s.x, align, sizeof(int) * agents_size);
