@@ -48,6 +48,9 @@ namespace Ped {
 		// Adds a new waypoint to reach for this agent
 		void addWaypoint(Twaypoint* wp);
 
+		Twaypoint *getWaypoint(const size_t idx) { return waypoints[idx]; }
+		int getWaypointsSize() const { return waypoints.size(); }
+
 	private:
 		Tagent() {};
 

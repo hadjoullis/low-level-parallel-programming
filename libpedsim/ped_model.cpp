@@ -29,7 +29,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
     std::cout << "Not compiled for CUDA" << std::endl;
 #endif
 
-	// Set 
+	// Set
 	agents = std::vector<Ped::Tagent*>(agentsInScenario.begin(), agentsInScenario.end());
 
 	// Set up destinations
@@ -40,6 +40,47 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 
 	// Set up heatmap (relevant for Assignment 4)
 	setupHeatmapSeq();
+
+	if (implementation != Ped::VECTOR) {
+		return;
+	}
+	const size_t agents_size = agentsInScenario.size();
+	const size_t align = 16;
+	posix_memalign((void **)&agents_s.x, align, sizeof(int) * agents_size);
+	posix_memalign((void **)&agents_s.y, align, sizeof(int) * agents_size);
+	posix_memalign((void **)&agents_s.desiredPositionX, align, sizeof(int) * agents_size);
+	posix_memalign((void **)&agents_s.desiredPositionY, align, sizeof(int) * agents_size);
+	posix_memalign((void **)&agents_s.destination_idx, align, sizeof(ssize_t) * agents_size);
+	posix_memalign((void **)&agents_s.lastDestination_idx, align, sizeof(ssize_t) * agents_size);
+	// maybe have a single waypoints array for all agents...
+	posix_memalign((void **)&agents_s.waypoints.x, align, sizeof(double *) * agents_size);
+	posix_memalign((void **)&agents_s.waypoints.y, align, sizeof(double *) * agents_size);
+	posix_memalign((void **)&agents_s.waypoints.r, align, sizeof(double *) * agents_size);
+	for (size_t i = 0; i < agents_size; i++) {
+		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
+		posix_memalign((void **)&agents_s.waypoints.x[i], align, bytes);
+		posix_memalign((void **)&agents_s.waypoints.y[i], align, bytes);
+		posix_memalign((void **)&agents_s.waypoints.r[i], align, bytes);
+	}
+	posix_memalign((void **)&agents_s.waypoints.sz, align, sizeof(size_t) * agents_size);
+
+	agents_s.size = agents_size;
+	for (size_t i = 0; i < agents_size; i++) {
+		agents_s.x[i] = agents[i]->getX();
+		agents_s.y[i] = agents[i]->getY();
+		// agents_s.desiredPositionX[i]: not set
+		// agents_s.desiredPositionY[i]: not set
+		agents_s.destination_idx[i] = -1;
+		agents_s.lastDestination_idx[i] = -1;
+		// agents_s.waypoints: already set
+		agents_s.waypoints.sz[i] = agents[i]->getWaypointsSize();
+		for (size_t j = 0; j < agents_s.waypoints.sz[i]; j++) {
+			auto wp = agents[i]->getWaypoint(j);
+			agents_s.waypoints.x[i][j] = wp->getx();
+			agents_s.waypoints.y[i][j] = wp->gety();
+			agents_s.waypoints.r[i][j] = wp->getr();
+		}
+	}
 }
 
 void Ped::Model::pthread_tick(const int k, int id) {
@@ -102,6 +143,14 @@ void Ped::Model::tick()
 			tid[i] = std::thread(&Ped::Model::pthread_tick, this, PTHREAD_NUM_THREADS, i);
 		}
 		for (auto& t: tid) { t.join(); }
+		break;
+	}
+	case Ped::VECTOR: {
+		for (size_t i = 0; i < agents_s.size; i++) {
+			struct_agents_computeNextDesiredPosition(&agents_s, i);
+			agents_s.x[i] = agents_s.desiredPositionX[i];
+			agents_s.y[i] = agents_s.desiredPositionY[i];
+		}
 		break;
 	}
 	default:
@@ -189,4 +238,22 @@ Ped::Model::~Model()
 {
 	std::for_each(agents.begin(), agents.end(), [](Ped::Tagent *agent){delete agent;});
 	std::for_each(destinations.begin(), destinations.end(), [](Ped::Twaypoint *destination){delete destination; });
+	if (this->implementation != Ped::VECTOR) {
+		return;
+	}
+	free(agents_s.x);
+	free(agents_s.y);
+	free(agents_s.desiredPositionX);
+	free(agents_s.desiredPositionY);
+	free(agents_s.destination_idx);
+	free(agents_s.lastDestination_idx);
+	for (size_t i = 0; i < agents_s.size; i++) {
+		free(agents_s.waypoints.x[i]);
+		free(agents_s.waypoints.y[i]);
+		free(agents_s.waypoints.r[i]);
+	}
+	free(agents_s.waypoints.x);
+	free(agents_s.waypoints.y);
+	free(agents_s.waypoints.r);
+	free(agents_s.waypoints.sz);
 }

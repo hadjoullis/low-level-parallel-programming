@@ -16,6 +16,7 @@
 #include <set>
 
 #include "ped_agent.h"
+#include "ped_struct_agents.h"
 
 namespace Ped{
 	class Tagent;
@@ -37,6 +38,9 @@ namespace Ped{
 		// Returns the agents of this scenario
 		const std::vector<Tagent*>& getAgents() const { return agents; };
 
+		const struct agents * get_agents_s() const { return &agents_s; };
+		const enum IMPLEMENTATION get_implementation() const { return this->implementation; }
+
 		// Adds an agent to the tree structure
 		void placeAgent(const Ped::Tagent *a);
 
@@ -57,6 +61,7 @@ namespace Ped{
 
 		// The agents in this scenario
 		std::vector<Tagent*> agents;
+		struct agents agents_s;
 
 		// The waypoints in this scenario
 		std::vector<Twaypoint*> destinations;
