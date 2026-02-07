@@ -53,13 +53,12 @@ void single_computeNextDesiredPosition(const struct agents *agents, const size_t
 }
 
 static inline __m512d fetch_dsts(ssize_t *destination_idx, double **coord, const size_t agent_idx) {
-	static double dsts[STEPS] = {0};
+	static double dsts[STEPS] __attribute__((aligned(16)));
 	for (size_t i = 0; i < STEPS; i++) {
 		const ssize_t dst_idx = destination_idx[agent_idx + i];
-		const double dst = coord[agent_idx + i][dst_idx];
-		dsts[i] = dst;
+		dsts[i] = coord[agent_idx + i][dst_idx];
 	}
-	return _mm512_set_pd(dsts[7], dsts[6], dsts[5], dsts[4], dsts[3], dsts[2], dsts[1], dsts[0]);
+	return _mm512_load_pd(&dsts);
 }
 
 static __m512i get_nextDestination_idx(const struct agents *agents, const size_t agent_idx) {
@@ -137,7 +136,6 @@ void simd_computeNextDesiredPosition(const struct agents *agents, const size_t a
 	const __m512d desiredPositionX_new = _mm512_add_pd(agent_xd, _mm512_div_pd(diffX, len));
 	const __m512d desiredPositionY_new = _mm512_add_pd(agent_yd, _mm512_div_pd(diffY, len));
 
-	const int ROUND = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC;
 	const __m256i desiredPositionX_blend = _mm512_mask_cvt_roundpd_epi32(
 		desiredPositionX, has_dst, desiredPositionX_new, ROUND);
 	const __m256i desiredPositionY_blend = _mm512_mask_cvt_roundpd_epi32(
