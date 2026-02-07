@@ -30,8 +30,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 #endif
 
 	// Set
-	agents = std::vector<Ped::Tagent *>(agentsInScenario.begin(),
-										agentsInScenario.end());
+	agents = std::vector<Ped::Tagent *>(agentsInScenario.begin(), agentsInScenario.end());
 
 	// Set up destinations
 	destinations = std::vector<Ped::Twaypoint *>(destinationsInScenario.begin(),
@@ -64,8 +63,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 	for (size_t i = 0; i < agents_size; i++) {
 		// allocate one extra element so when we index with offset '-1' we do
 		// not go out of bounds ('simd_computeNextDesiredPosition')
-		const size_t bytes =
-			sizeof(double) * (agents[i]->getWaypointsSize() + 1);
+		const size_t bytes = sizeof(double) * (agents[i]->getWaypointsSize() + 1);
 		posix_memalign((void **)&agents_s.waypoints.x[i], align, bytes);
 		posix_memalign((void **)&agents_s.waypoints.y[i], align, bytes);
 		posix_memalign((void **)&agents_s.waypoints.r[i], align, bytes);
@@ -86,8 +84,8 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		// we need to ensure that if we index with '-1' the condition 'len <
 		// dst_r' evaluates to true so we satisfy both clauses of the second
 		// if statement
-		agents_s.waypoints.x[i][-1] = DBL_MAX;
-		agents_s.waypoints.y[i][-1] = DBL_MAX;
+		agents_s.waypoints.x[i][-1] = 0;
+		agents_s.waypoints.y[i][-1] = 0;
 		agents_s.waypoints.r[i][-1] = DBL_MAX;
 		// agents_s.waypoints: already set
 		agents_s.waypoints.sz[i] = agents[i]->getWaypointsSize();
@@ -158,8 +156,7 @@ void Ped::Model::tick() {
 		}
 		static std::vector<std::thread> tid(PTHREAD_NUM_THREADS);
 		for (int i = 0; i < PTHREAD_NUM_THREADS; i++) {
-			tid[i] = std::thread(&Ped::Model::pthread_tick, this,
-								 PTHREAD_NUM_THREADS, i);
+			tid[i] = std::thread(&Ped::Model::pthread_tick, this, PTHREAD_NUM_THREADS, i);
 		}
 		for (auto &t : tid) {
 			t.join();
@@ -197,15 +194,14 @@ void Ped::Model::tick() {
 // be moved to a location close to it.
 void Ped::Model::move(Ped::Tagent *agent) {
 	// Search for neighboring agents
-	set<const Ped::Tagent *> neighbors =
-		getNeighbors(agent->getX(), agent->getY(), 2);
+	set<const Ped::Tagent *> neighbors = getNeighbors(agent->getX(), agent->getY(), 2);
 
 	// Retrieve their positions
 	std::vector<std::pair<int, int>> takenPositions;
 	for (std::set<const Ped::Tagent *>::iterator neighborIt = neighbors.begin();
-		 neighborIt != neighbors.end(); ++neighborIt) {
-		std::pair<int, int> position((*neighborIt)->getX(),
-									 (*neighborIt)->getY());
+		 neighborIt != neighbors.end();
+		 ++neighborIt) {
+		std::pair<int, int> position((*neighborIt)->getX(), (*neighborIt)->getY());
 		takenPositions.push_back(position);
 	}
 
@@ -231,13 +227,12 @@ void Ped::Model::move(Ped::Tagent *agent) {
 	prioritizedAlternatives.push_back(p2);
 
 	// Find the first empty alternative position
-	for (std::vector<pair<int, int>>::iterator it =
-			 prioritizedAlternatives.begin();
-		 it != prioritizedAlternatives.end(); ++it) {
+	for (std::vector<pair<int, int>>::iterator it = prioritizedAlternatives.begin();
+		 it != prioritizedAlternatives.end();
+		 ++it) {
 
 		// If the current position is not yet taken by any neighbor
-		if (std::find(takenPositions.begin(), takenPositions.end(), *it) ==
-			takenPositions.end()) {
+		if (std::find(takenPositions.begin(), takenPositions.end(), *it) == takenPositions.end()) {
 
 			// Set the agent's position
 			agent->setX((*it).first);
@@ -256,8 +251,7 @@ void Ped::Model::move(Ped::Tagent *agent) {
 /// \param   y the y coordinate
 /// \param   dist the distance around x/y that will be searched for agents
 /// (search field is a square in the current implementation)
-set<const Ped::Tagent *> Ped::Model::getNeighbors(int x, int y,
-												  int dist) const {
+set<const Ped::Tagent *> Ped::Model::getNeighbors(int x, int y, int dist) const {
 
 	// create the output list
 	// ( It would be better to include only the agents close by, but this
@@ -270,10 +264,10 @@ void Ped::Model::cleanup() {
 }
 
 Ped::Model::~Model() {
-	std::for_each(agents.begin(), agents.end(),
-				  [](Ped::Tagent *agent) { delete agent; });
-	std::for_each(destinations.begin(), destinations.end(),
-				  [](Ped::Twaypoint *destination) { delete destination; });
+	std::for_each(agents.begin(), agents.end(), [](Ped::Tagent *agent) { delete agent; });
+	std::for_each(destinations.begin(), destinations.end(), [](Ped::Twaypoint *destination) {
+		delete destination;
+	});
 	if (this->implementation != Ped::VECTOR) {
 		return;
 	}
