@@ -7,11 +7,10 @@
 //
 #include "ped_model.h"
 #include "ped_waypoint.h"
-#include "ped_model.h"
-#include <iostream>
-#include <stack>
 #include <algorithm>
+#include <iostream>
 #include <omp.h>
+#include <stack>
 #include <thread>
 
 #ifndef NOCDUA
@@ -20,20 +19,23 @@
 
 #include <stdlib.h>
 
-void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<Twaypoint*> destinationsInScenario, IMPLEMENTATION implementation)
-{
+void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
+					   std::vector<Twaypoint *> destinationsInScenario,
+					   IMPLEMENTATION implementation) {
 #ifndef NOCUDA
 	// Convenience test: does CUDA work on this machine?
 	cuda_test();
 #else
-    std::cout << "Not compiled for CUDA" << std::endl;
+	std::cout << "Not compiled for CUDA" << std::endl;
 #endif
 
 	// Set
-	agents = std::vector<Ped::Tagent*>(agentsInScenario.begin(), agentsInScenario.end());
+	agents = std::vector<Ped::Tagent *>(agentsInScenario.begin(),
+										agentsInScenario.end());
 
 	// Set up destinations
-	destinations = std::vector<Ped::Twaypoint*>(destinationsInScenario.begin(), destinationsInScenario.end());
+	destinations = std::vector<Ped::Twaypoint *>(destinationsInScenario.begin(),
+												 destinationsInScenario.end());
 
 	// Sets the chosen implemenation. Standard in the given code is SEQ
 	this->implementation = implementation;
@@ -46,24 +48,33 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 	}
 	agents_s = {0};
 	const size_t agents_size = agentsInScenario.size();
-	const size_t align = 16;
-	posix_memalign((void **)&agents_s.x, align, sizeof(int) * agents_size);
-	posix_memalign((void **)&agents_s.y, align, sizeof(int) * agents_size);
-	posix_memalign((void **)&agents_s.desiredPositionX, align, sizeof(int) * agents_size);
-	posix_memalign((void **)&agents_s.desiredPositionY, align, sizeof(int) * agents_size);
-	posix_memalign((void **)&agents_s.destination_idx, align, sizeof(ssize_t) * agents_size);
-	posix_memalign((void **)&agents_s.lastDestination_idx, align, sizeof(ssize_t) * agents_size);
-	// maybe have a single waypoints array for all agents...
-	posix_memalign((void **)&agents_s.waypoints.x, align, sizeof(double *) * agents_size);
-	posix_memalign((void **)&agents_s.waypoints.y, align, sizeof(double *) * agents_size);
-	posix_memalign((void **)&agents_s.waypoints.r, align, sizeof(double *) * agents_size);
+	const size_t align = 512 / STEPS;
+	const size_t int_bytes = sizeof(int) * agents_size;
+	const size_t size_t_bytes = sizeof(size_t) * agents_size;
+	const size_t ssize_t_bytes = sizeof(ssize_t) * agents_size;
+	const size_t ptr_bytes = sizeof(double *) * agents_size;
+	posix_memalign((void **)&agents_s.x, align, int_bytes);
+	posix_memalign((void **)&agents_s.y, align, int_bytes);
+	posix_memalign((void **)&agents_s.desiredPositionX, align, int_bytes);
+	posix_memalign((void **)&agents_s.desiredPositionY, align, int_bytes);
+	posix_memalign((void **)&agents_s.destination_idx, align, ssize_t_bytes);
+	posix_memalign((void **)&agents_s.waypoints.x, align, ptr_bytes);
+	posix_memalign((void **)&agents_s.waypoints.y, align, ptr_bytes);
+	posix_memalign((void **)&agents_s.waypoints.r, align, ptr_bytes);
 	for (size_t i = 0; i < agents_size; i++) {
-		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
+		// allocate one extra element so when we index with offset '-1' we do
+		// not go out of bounds ('simd_computeNextDesiredPosition')
+		const size_t bytes =
+			sizeof(double) * (agents[i]->getWaypointsSize() + 1);
 		posix_memalign((void **)&agents_s.waypoints.x[i], align, bytes);
 		posix_memalign((void **)&agents_s.waypoints.y[i], align, bytes);
 		posix_memalign((void **)&agents_s.waypoints.r[i], align, bytes);
+
+		agents_s.waypoints.x[i]++;
+		agents_s.waypoints.y[i]++;
+		agents_s.waypoints.r[i]++;
 	}
-	posix_memalign((void **)&agents_s.waypoints.sz, align, sizeof(size_t) * agents_size);
+	posix_memalign((void **)&agents_s.waypoints.sz, align, size_t_bytes);
 
 	agents_s.size = agents_size;
 	for (size_t i = 0; i < agents_size; i++) {
@@ -72,7 +83,12 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 		// agents_s.desiredPositionX[i]: not set
 		// agents_s.desiredPositionY[i]: not set
 		agents_s.destination_idx[i] = -1;
-		agents_s.lastDestination_idx[i] = -1;
+		// we need to ensure that if we index with '-1' the condition 'len <
+		// dst_r' evaluates to true so we satisfy both clauses of the second
+		// if statement
+		agents_s.waypoints.x[i][-1] = DBL_MAX;
+		agents_s.waypoints.y[i][-1] = DBL_MAX;
+		agents_s.waypoints.r[i][-1] = DBL_MAX;
 		// agents_s.waypoints: already set
 		agents_s.waypoints.sz[i] = agents[i]->getWaypointsSize();
 		for (size_t j = 0; j < agents_s.waypoints.sz[i]; j++) {
@@ -85,7 +101,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 }
 
 void Ped::Model::pthread_tick(const int k, int id) {
-	auto& agents = this->agents;
+	auto &agents = this->agents;
 	const int n = agents.size();
 
 	const int chunk_sz = n / k;
@@ -93,7 +109,7 @@ void Ped::Model::pthread_tick(const int k, int id) {
 	const int end = ((id != k - 1) ? ((id + 1) * chunk_sz) : n);
 
 	for (int i = start; i < end; i++) {
-		auto* agent = agents[i];
+		auto *agent = agents[i];
 		agent->computeNextDesiredPosition();
 		const int x = agent->getDesiredX();
 		const int y = agent->getDesiredY();
@@ -102,12 +118,11 @@ void Ped::Model::pthread_tick(const int k, int id) {
 	}
 }
 
-void Ped::Model::tick()
-{
+void Ped::Model::tick() {
 	// EDIT HERE FOR ASSIGNMENT 1
 	switch (this->implementation) {
 	case Ped::SEQ: {
-		for (auto* const agent: this->agents) {
+		for (auto *const agent : this->agents) {
 			agent->computeNextDesiredPosition();
 			const int x = agent->getDesiredX();
 			const int y = agent->getDesiredY();
@@ -117,12 +132,12 @@ void Ped::Model::tick()
 		break;
 	}
 	case Ped::OMP: {
-		auto& agents = this->agents;
+		auto &agents = this->agents;
 		const int n = agents.size();
 
-		#pragma omp parallel for default(none) shared(n,agents)
+#pragma omp parallel for default(none) shared(n, agents)
 		for (int i = 0; i < n; i++) {
-			auto* agent = agents[i];
+			auto *agent = agents[i];
 			agent->computeNextDesiredPosition();
 			const int x = agent->getDesiredX();
 			const int y = agent->getDesiredY();
@@ -136,19 +151,32 @@ void Ped::Model::tick()
 		static int PTHREAD_NUM_THREADS = 8;
 		if (once) {
 			char *retval = getenv("PTHREAD_NUM_THREADS");
-			if (retval) { PTHREAD_NUM_THREADS = atoi(retval); }
+			if (retval) {
+				PTHREAD_NUM_THREADS = atoi(retval);
+			}
 			once = false;
 		}
 		static std::vector<std::thread> tid(PTHREAD_NUM_THREADS);
 		for (int i = 0; i < PTHREAD_NUM_THREADS; i++) {
-			tid[i] = std::thread(&Ped::Model::pthread_tick, this, PTHREAD_NUM_THREADS, i);
+			tid[i] = std::thread(&Ped::Model::pthread_tick, this,
+								 PTHREAD_NUM_THREADS, i);
 		}
-		for (auto& t: tid) { t.join(); }
+		for (auto &t : tid) {
+			t.join();
+		}
 		break;
 	}
 	case Ped::VECTOR: {
-		for (size_t i = 0; i < agents_s.size; i++) {
+		size_t i;
+		for (i = 0; i + STEPS <= agents_s.size; i += STEPS) {
 			simd_computeNextDesiredPosition(&agents_s, i);
+			const __m256i x = _mm256_load_epi32(&agents_s.desiredPositionX[i]);
+			const __m256i y = _mm256_load_epi32(&agents_s.desiredPositionY[i]);
+			_mm256_store_epi32(&agents_s.x[i], x);
+			_mm256_store_epi32(&agents_s.y[i], y);
+		}
+		for (; i < agents_s.size; i++) {
+			single_computeNextDesiredPosition(&agents_s, i);
 			agents_s.x[i] = agents_s.desiredPositionX[i];
 			agents_s.y[i] = agents_s.desiredPositionY[i];
 		}
@@ -167,34 +195,34 @@ void Ped::Model::tick()
 
 // Moves the agent to the next desired position. If already taken, it will
 // be moved to a location close to it.
-void Ped::Model::move(Ped::Tagent *agent)
-{
+void Ped::Model::move(Ped::Tagent *agent) {
 	// Search for neighboring agents
-	set<const Ped::Tagent *> neighbors = getNeighbors(agent->getX(), agent->getY(), 2);
+	set<const Ped::Tagent *> neighbors =
+		getNeighbors(agent->getX(), agent->getY(), 2);
 
 	// Retrieve their positions
-	std::vector<std::pair<int, int> > takenPositions;
-	for (std::set<const Ped::Tagent*>::iterator neighborIt = neighbors.begin(); neighborIt != neighbors.end(); ++neighborIt) {
-		std::pair<int, int> position((*neighborIt)->getX(), (*neighborIt)->getY());
+	std::vector<std::pair<int, int>> takenPositions;
+	for (std::set<const Ped::Tagent *>::iterator neighborIt = neighbors.begin();
+		 neighborIt != neighbors.end(); ++neighborIt) {
+		std::pair<int, int> position((*neighborIt)->getX(),
+									 (*neighborIt)->getY());
 		takenPositions.push_back(position);
 	}
 
 	// Compute the three alternative positions that would bring the agent
 	// closer to his desiredPosition, starting with the desiredPosition itself
-	std::vector<std::pair<int, int> > prioritizedAlternatives;
+	std::vector<std::pair<int, int>> prioritizedAlternatives;
 	std::pair<int, int> pDesired(agent->getDesiredX(), agent->getDesiredY());
 	prioritizedAlternatives.push_back(pDesired);
 
 	int diffX = pDesired.first - agent->getX();
 	int diffY = pDesired.second - agent->getY();
 	std::pair<int, int> p1, p2;
-	if (diffX == 0 || diffY == 0)
-	{
+	if (diffX == 0 || diffY == 0) {
 		// Agent wants to walk straight to North, South, West or East
 		p1 = std::make_pair(pDesired.first + diffY, pDesired.second + diffX);
 		p2 = std::make_pair(pDesired.first - diffY, pDesired.second - diffX);
-	}
-	else {
+	} else {
 		// Agent wants to walk diagonally
 		p1 = std::make_pair(pDesired.first, agent->getY());
 		p2 = std::make_pair(agent->getX(), pDesired.second);
@@ -203,12 +231,15 @@ void Ped::Model::move(Ped::Tagent *agent)
 	prioritizedAlternatives.push_back(p2);
 
 	// Find the first empty alternative position
-	for (std::vector<pair<int, int> >::iterator it = prioritizedAlternatives.begin(); it != prioritizedAlternatives.end(); ++it) {
+	for (std::vector<pair<int, int>>::iterator it =
+			 prioritizedAlternatives.begin();
+		 it != prioritizedAlternatives.end(); ++it) {
 
 		// If the current position is not yet taken by any neighbor
-		if (std::find(takenPositions.begin(), takenPositions.end(), *it) == takenPositions.end()) {
+		if (std::find(takenPositions.begin(), takenPositions.end(), *it) ==
+			takenPositions.end()) {
 
-			// Set the agent's position 
+			// Set the agent's position
 			agent->setX((*it).first);
 			agent->setY((*it).second);
 
@@ -223,22 +254,26 @@ void Ped::Model::move(Ped::Tagent *agent)
 /// \return  The list of neighbors
 /// \param   x the x coordinate
 /// \param   y the y coordinate
-/// \param   dist the distance around x/y that will be searched for agents (search field is a square in the current implementation)
-set<const Ped::Tagent*> Ped::Model::getNeighbors(int x, int y, int dist) const {
+/// \param   dist the distance around x/y that will be searched for agents
+/// (search field is a square in the current implementation)
+set<const Ped::Tagent *> Ped::Model::getNeighbors(int x, int y,
+												  int dist) const {
 
 	// create the output list
-	// ( It would be better to include only the agents close by, but this programmer is lazy.)	
-	return set<const Ped::Tagent*>(agents.begin(), agents.end());
+	// ( It would be better to include only the agents close by, but this
+	// programmer is lazy.)
+	return set<const Ped::Tagent *>(agents.begin(), agents.end());
 }
 
 void Ped::Model::cleanup() {
-	// Nothing to do here right now. 
+	// Nothing to do here right now.
 }
 
-Ped::Model::~Model()
-{
-	std::for_each(agents.begin(), agents.end(), [](Ped::Tagent *agent){delete agent;});
-	std::for_each(destinations.begin(), destinations.end(), [](Ped::Twaypoint *destination){delete destination; });
+Ped::Model::~Model() {
+	std::for_each(agents.begin(), agents.end(),
+				  [](Ped::Tagent *agent) { delete agent; });
+	std::for_each(destinations.begin(), destinations.end(),
+				  [](Ped::Twaypoint *destination) { delete destination; });
 	if (this->implementation != Ped::VECTOR) {
 		return;
 	}
@@ -247,8 +282,10 @@ Ped::Model::~Model()
 	free(agents_s.desiredPositionX);
 	free(agents_s.desiredPositionY);
 	free(agents_s.destination_idx);
-	free(agents_s.lastDestination_idx);
 	for (size_t i = 0; i < agents_s.size; i++) {
+		agents_s.waypoints.x[i]--;
+		agents_s.waypoints.y[i]--;
+		agents_s.waypoints.r[i]--;
 		free(agents_s.waypoints.x[i]);
 		free(agents_s.waypoints.y[i]);
 		free(agents_s.waypoints.r[i]);
