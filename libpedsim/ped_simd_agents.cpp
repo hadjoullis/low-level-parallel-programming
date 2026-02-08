@@ -7,7 +7,7 @@
 //
 #include "ped_simd_agents.h"
 
-void single_computeNextDesiredPosition(const struct agents *agents, const size_t agent_idx) {
+static ssize_t single_get_nextDestination_idx(const struct agents *agents, const size_t agent_idx) {
 	ssize_t nextDestination_idx = -1;
 	bool agentReachedDestination = false;
 	const int agent_x = agents->x[agent_idx];
@@ -31,18 +31,22 @@ void single_computeNextDesiredPosition(const struct agents *agents, const size_t
 			wps_idx = -1;
 		}
 		nextDestination_idx = wps_idx;
-		agents->destination_idx[agent_idx] = wps_idx;
 	} else {
 		// Case 2: agent has not yet reached destination, continue to move
 		// towards current destination
 		nextDestination_idx = agents->destination_idx[agent_idx];
 	}
+	return nextDestination_idx;
+}
 
-	// both cases achieve the same result
-	// agents->destination_idx[agent_idx] = nextDestination_idx;
+void single_computeNextDesiredPosition(const struct agents *agents, const size_t agent_idx) {
+	ssize_t nextDestination_idx = single_get_nextDestination_idx(agents, agent_idx);
+	agents->destination_idx[agent_idx] = nextDestination_idx;
 	if (agents->destination_idx[agent_idx] == -1) {
 		return; // no destination, no need to compute where to move to
 	}
+	const int agent_x = agents->x[agent_idx];
+	const int agent_y = agents->y[agent_idx];
 
 	const ssize_t dst_idx = agents->destination_idx[agent_idx];
 	const double diffX = agents->waypoints.x[agent_idx][dst_idx] - agent_x;
@@ -61,7 +65,7 @@ static inline __m512d fetch_dsts(ssize_t *destination_idx, double **coord, const
 	return _mm512_load_pd(&dsts);
 }
 
-static __m512i get_nextDestination_idx(const struct agents *agents, const size_t agent_idx) {
+static __m512i simd_get_nextDestination_idx(const struct agents *agents, const size_t agent_idx) {
 	const __m256i agent_x = _mm256_load_epi32(&agents->x[agent_idx]);
 	const __m256i agent_y = _mm256_load_epi32(&agents->y[agent_idx]);
 	const __m512d agent_xd = _mm512_cvtepi32_pd(agent_x);
@@ -108,7 +112,7 @@ static __m512i get_nextDestination_idx(const struct agents *agents, const size_t
 }
 
 void simd_computeNextDesiredPosition(const struct agents *agents, const size_t agent_idx) {
-	const __m512i nextDestination_idx = get_nextDestination_idx(agents, agent_idx);
+	const __m512i nextDestination_idx = simd_get_nextDestination_idx(agents, agent_idx);
 	_mm512_store_epi64(&agents->destination_idx[agent_idx], nextDestination_idx);
 
 	const __m256i agent_x = _mm256_load_epi32(&agents->x[agent_idx]);
