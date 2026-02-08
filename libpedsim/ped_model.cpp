@@ -42,37 +42,48 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 	// Set up heatmap (relevant for Assignment 4)
 	setupHeatmapSeq();
 
-	if (implementation != Ped::VECTOR) {
-		return;
+	switch (implementation) {
+	case Ped::VECTOR:
+		printf("Setting up data structures for SIMD...\n");
+		simd_init();
+		printf("Data structures set up for SIMD complete.\n");
+		break;
+	case Ped::CUDA:
+		printf("IMPLEMENT CUDA\n");
+		break;
+	default:
+		printf("No extra setup needed for given implementation\n");
 	}
+}
+
+void Ped::Model::simd_init(void) {
 	agents_s = {0};
-	const size_t agents_size = agentsInScenario.size();
-	const size_t align = 512 / STEPS;
+	const size_t agents_size = agents.size();
 	const size_t int_bytes = sizeof(int) * agents_size;
 	const size_t size_t_bytes = sizeof(size_t) * agents_size;
 	const size_t ssize_t_bytes = sizeof(ssize_t) * agents_size;
 	const size_t ptr_bytes = sizeof(double *) * agents_size;
-	posix_memalign((void **)&agents_s.x, align, int_bytes);
-	posix_memalign((void **)&agents_s.y, align, int_bytes);
-	posix_memalign((void **)&agents_s.desiredPositionX, align, int_bytes);
-	posix_memalign((void **)&agents_s.desiredPositionY, align, int_bytes);
-	posix_memalign((void **)&agents_s.destination_idx, align, ssize_t_bytes);
-	posix_memalign((void **)&agents_s.waypoints.x, align, ptr_bytes);
-	posix_memalign((void **)&agents_s.waypoints.y, align, ptr_bytes);
-	posix_memalign((void **)&agents_s.waypoints.r, align, ptr_bytes);
+	posix_memalign((void **)&agents_s.x, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s.y, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s.desiredPositionX, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s.desiredPositionY, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s.destination_idx, ALIGN, ssize_t_bytes);
+	posix_memalign((void **)&agents_s.waypoints.x, ALIGN, ptr_bytes);
+	posix_memalign((void **)&agents_s.waypoints.y, ALIGN, ptr_bytes);
+	posix_memalign((void **)&agents_s.waypoints.r, ALIGN, ptr_bytes);
 	for (size_t i = 0; i < agents_size; i++) {
 		// allocate one extra element so when we index with offset '-1' we do
 		// not go out of bounds ('simd_computeNextDesiredPosition')
 		const size_t bytes = sizeof(double) * (agents[i]->getWaypointsSize() + 1);
-		posix_memalign((void **)&agents_s.waypoints.x[i], align, bytes);
-		posix_memalign((void **)&agents_s.waypoints.y[i], align, bytes);
-		posix_memalign((void **)&agents_s.waypoints.r[i], align, bytes);
+		posix_memalign((void **)&agents_s.waypoints.x[i], ALIGN, bytes);
+		posix_memalign((void **)&agents_s.waypoints.y[i], ALIGN, bytes);
+		posix_memalign((void **)&agents_s.waypoints.r[i], ALIGN, bytes);
 
 		agents_s.waypoints.x[i]++;
 		agents_s.waypoints.y[i]++;
 		agents_s.waypoints.r[i]++;
 	}
-	posix_memalign((void **)&agents_s.waypoints.sz, align, size_t_bytes);
+	posix_memalign((void **)&agents_s.waypoints.sz, ALIGN, size_t_bytes);
 
 	agents_s.size = agents_size;
 	for (size_t i = 0; i < agents_size; i++) {
@@ -263,14 +274,7 @@ void Ped::Model::cleanup() {
 	// Nothing to do here right now.
 }
 
-Ped::Model::~Model() {
-	std::for_each(agents.begin(), agents.end(), [](Ped::Tagent *agent) { delete agent; });
-	std::for_each(destinations.begin(), destinations.end(), [](Ped::Twaypoint *destination) {
-		delete destination;
-	});
-	if (this->implementation != Ped::VECTOR) {
-		return;
-	}
+void Ped::Model::simd_dinit() {
 	free(agents_s.x);
 	free(agents_s.y);
 	free(agents_s.desiredPositionX);
@@ -288,4 +292,26 @@ Ped::Model::~Model() {
 	free(agents_s.waypoints.y);
 	free(agents_s.waypoints.r);
 	free(agents_s.waypoints.sz);
+}
+
+Ped::Model::~Model() {
+	std::for_each(agents.begin(), agents.end(), [](Ped::Tagent *agent) { delete agent; });
+	std::for_each(destinations.begin(), destinations.end(), [](Ped::Twaypoint *destination) {
+		delete destination;
+	});
+	switch (implementation) {
+	case Ped::VECTOR:
+		printf("Cleaning up data structures for SIMD...\n");
+		simd_dinit();
+		printf("Data structures for SIMD released.\n");
+		break;
+	case Ped::CUDA:
+		printf("IMPLEMENT CUDA\n");
+		break;
+	default:
+		printf("No extra cleanup needed for given implementation.\n");
+	}
+	if (this->implementation != Ped::VECTOR) {
+		return;
+	}
 }

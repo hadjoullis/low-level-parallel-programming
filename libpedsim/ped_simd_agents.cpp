@@ -57,7 +57,7 @@ void single_computeNextDesiredPosition(const struct agents *agents, const size_t
 }
 
 static inline __m512d fetch_dsts(ssize_t *destination_idx, double **coord, const size_t agent_idx) {
-	static double dsts[STEPS] __attribute__((aligned(16)));
+	static double dsts[STEPS] __attribute__((aligned(ALIGN)));
 	for (size_t i = 0; i < STEPS; i++) {
 		const ssize_t dst_idx = destination_idx[agent_idx + i];
 		dsts[i] = coord[agent_idx + i][dst_idx];

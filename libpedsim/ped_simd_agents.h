@@ -25,6 +25,7 @@
 
 // max sizeof double vs size_t vs ssize_t vs int: 8
 #define STEPS (sizeof(__m512) / 8)
+#define ALIGN (512 / STEPS)
 #define ROUND (_MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC)
 
 // (x,y): position of the waypoint
