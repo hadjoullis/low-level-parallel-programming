@@ -1,0 +1,62 @@
+//
+// pedsim - A microscopic pedestrian simulation system.
+// Copyright (c) 2003 - 2014 by Christian Gloor
+//
+//
+// Adapted for Low Level Parallel Programming 2017
+//
+#include "ped_cuda_agent.cuh"
+
+__device__ static ssize_t get_nextDestination_idx(const struct agents *agents, const size_t agent_idx) {
+	ssize_t nextDestination_idx = -1;
+	bool agentReachedDestination = false;
+	const int agent_x = agents->x[agent_idx];
+	const int agent_y = agents->y[agent_idx];
+
+	if (agents->destination_idx[agent_idx] != -1) {
+		// compute if agent reached its current destination
+		const ssize_t dst_idx = agents->destination_idx[agent_idx];
+		const double diffX = agents->waypoints.x[agent_idx][dst_idx] - agent_x;
+		const double diffY = agents->waypoints.y[agent_idx][dst_idx] - agent_y;
+		const double len = sqrt(diffX * diffX + diffY * diffY);
+		agentReachedDestination = len < agents->waypoints.r[agent_idx][dst_idx];
+	}
+
+	if ((agentReachedDestination || agents->destination_idx[agent_idx] == -1) &&
+		agents->waypoints.sz[agent_idx] != 0) {
+		// Case 1: agent has reached destination (or has no current
+		// destination); get next destination if available
+		ssize_t wps_idx = agents->destination_idx[agent_idx] + 1;
+		if (wps_idx == agents->waypoints.sz[agent_idx]) {
+			wps_idx = -1;
+		}
+		nextDestination_idx = wps_idx;
+	} else {
+		// Case 2: agent has not yet reached destination, continue to move
+		// towards current destination
+		nextDestination_idx = agents->destination_idx[agent_idx];
+	}
+	return nextDestination_idx;
+}
+
+__global__ void cuda_computeNextDesiredPosition(const struct agents *agents) {
+	const size_t agent_idx = blockIdx.x * blockDim.x + threadIdx.x;
+	ssize_t nextDestination_idx = get_nextDestination_idx(agents, agent_idx);
+	agents->destination_idx[agent_idx] = nextDestination_idx;
+	if (agents->destination_idx[agent_idx] == -1) {
+		return; // no destination, no need to compute where to move to
+	}
+	const int agent_x = agents->x[agent_idx];
+	const int agent_y = agents->y[agent_idx];
+
+	const ssize_t dst_idx = agents->destination_idx[agent_idx];
+	const double diffX = agents->waypoints.x[agent_idx][dst_idx] - agent_x;
+	const double diffY = agents->waypoints.y[agent_idx][dst_idx] - agent_y;
+	const double len = sqrt(diffX * diffX + diffY * diffY);
+	agents->desiredPositionX[agent_idx] = (int)round(agent_x + diffX / len);
+	agents->desiredPositionY[agent_idx] = (int)round(agent_y + diffY / len);
+}
+
+inline void kernel_launch(dim3 blocks, dim3 threads_per_block, const struct agents *agents) {
+	cuda_computeNextDesiredPosition<<<blocks, threads_per_block>>>(agents);
+}

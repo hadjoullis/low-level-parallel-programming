@@ -17,6 +17,7 @@
 
 #include "ped_agent.h"
 #include "ped_simd_agents.h"
+#include "ped_cuda_agent.cuh"
 
 namespace Ped{
 	class Tagent;
@@ -39,7 +40,7 @@ namespace Ped{
 		const std::vector<Tagent*>& getAgents() const { return agents; };
 
 		const struct agents * get_agents_s() const { return &agents_s; };
-		const enum IMPLEMENTATION get_implementation() const { return this->implementation; }
+		enum IMPLEMENTATION get_implementation() const { return this->implementation; }
 
 		// Adds an agent to the tree structure
 		void placeAgent(const Ped::Tagent *a);
@@ -62,12 +63,17 @@ namespace Ped{
 		// The agents in this scenario
 		std::vector<Tagent*> agents;
 		struct agents agents_s;
+		struct agents *agents_d;
+        size_t num_blocks;
 
 		// The waypoints in this scenario
 		std::vector<Twaypoint*> destinations;
 
 		void simd_init(void);
 		void simd_dinit(void);
+
+		void cuda_init(void);
+		void cuda_dinit(void);
 		void pthread_tick(const int k, int id);
 
 		// Moves an agent towards its next position

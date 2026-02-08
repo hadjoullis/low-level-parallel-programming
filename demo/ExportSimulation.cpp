@@ -19,7 +19,8 @@ ExportSimulation::~ExportSimulation() {
 
 void ExportSimulation::serialize()
 {
-    if (model.get_implementation() == Ped::VECTOR) {
+    const enum Ped::IMPLEMENTATION impl = model.get_implementation();
+    if (impl == Ped::VECTOR || impl == Ped::CUDA) {
         const struct agents *agents = model.get_agents_s();
         size_t num_agents = agents->size;
         file.write(reinterpret_cast<const char*>(&num_agents), sizeof(num_agents));
