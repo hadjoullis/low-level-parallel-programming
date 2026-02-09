@@ -16,9 +16,10 @@
 #ifndef _ped_cuda_agent_h_
 #define _ped_cuda_agent_h_ 1
 
-#include <cuda_runtime.h>
-#include <string.h>
 #include "ped_model.h"
+#include <cuda_runtime.h>
+#include <math.h>
+#include <string.h>
 
 #define THREADS_PER_BLOCK 512
 

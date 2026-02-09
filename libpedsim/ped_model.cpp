@@ -276,7 +276,7 @@ void Ped::Model::tick() {
 	}
 	case Ped::CUDA: {
 		static dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
-		static dim3 blocks(agents_s.size / threads_per_block.x, 1, 1);
+		static dim3 blocks(ceil(agents_s.size / threads_per_block.x), 1, 1);
 		static const size_t bytes = sizeof(int) * agents_s.size;
 
 		kernel_launch(blocks, threads_per_block, &agents_d);
@@ -405,6 +405,7 @@ void Ped::Model::cuda_dinit() {
 	// cudaFree(agents_d.waypoints.y);
 	// cudaFree(agents_d.waypoints.r);
 	// cudaFree(agents_d.waypoints.sz);
+	cudaDeviceReset();
 
 	// -- host --
 	cudaFreeHost(agents_s.x);
