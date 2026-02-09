@@ -7,14 +7,14 @@
 //
 #include "ped_cuda_agent.cuh"
 
-__device__ ssize_t get_nextDestination_idx(double **wps_x,
-										   double **wps_y,
-										   double **wps_r,
-										   size_t *wps_sz,
-										   const int agent_x,
-										   const int agent_y,
-										   const ssize_t dst_idx,
-										   const size_t agent_idx) {
+static __device__ ssize_t get_nextDestination_idx(double **wps_x,
+												  double **wps_y,
+												  double **wps_r,
+												  size_t *wps_sz,
+												  const int agent_x,
+												  const int agent_y,
+												  const ssize_t dst_idx,
+												  const size_t agent_idx) {
 	ssize_t nextDestination_idx = -1;
 	bool agentReachedDestination = false;
 
@@ -42,16 +42,16 @@ __device__ ssize_t get_nextDestination_idx(double **wps_x,
 	return nextDestination_idx;
 }
 
-__global__ void cuda_computeNextDesiredPosition(double **wps_x,
-												double **wps_y,
-												double **wps_r,
-												size_t *wps_sz,
-												size_t size,
-												int *x,
-												int *y,
-												int *desiredPositionX,
-												int *desiredPositionY,
-												ssize_t *destination_idx) {
+static __global__ void cuda_computeNextDesiredPosition(double **wps_x,
+													   double **wps_y,
+													   double **wps_r,
+													   size_t *wps_sz,
+													   size_t size,
+													   int *x,
+													   int *y,
+													   int *desiredPositionX,
+													   int *desiredPositionY,
+													   ssize_t *destination_idx) {
 	const size_t agent_idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (agent_idx >= size) {
 		return;

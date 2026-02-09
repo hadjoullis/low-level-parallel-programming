@@ -18,13 +18,10 @@
 
 #include "ped_model.h"
 #include <cuda_runtime.h>
-#include <math.h>
 #include <string.h>
 
 #define THREADS_PER_BLOCK 512
 
-// Update the position according to get closer to the current destination
-__global__ void cuda_computeNextDesiredPosition(const struct agents *agents);
 void kernel_launch(dim3 blocks, dim3 threads_per_block, const struct agents *agents);
 
 #endif

@@ -153,9 +153,8 @@ void Ped::Model::cuda_init(void) {
 	}
 
 	// -- device --
-	num_blocks = agents_size / THREADS_PER_BLOCK;
-
 	agents_d = {0};
+	agents_d.size = agents_size;
 	double **wps_x, **wps_y, **wps_r;
 	wps_x = (double **)malloc(ptr_bytes);
 	wps_y = (double **)malloc(ptr_bytes);
@@ -191,6 +190,10 @@ void Ped::Model::cuda_init(void) {
 		cudaMemcpy(wps_y[i], agents_s.waypoints.y[i], bytes, cudaMemcpyHostToDevice);
 		cudaMemcpy(wps_r[i], agents_s.waypoints.r[i], bytes, cudaMemcpyHostToDevice);
 	}
+
+    free(wps_x);
+    free(wps_y);
+    free(wps_r);
 }
 
 void Ped::Model::pthread_tick(const int k, int id) {
@@ -276,7 +279,7 @@ void Ped::Model::tick() {
 	}
 	case Ped::CUDA: {
 		static dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
-		static dim3 blocks(ceil(agents_s.size / threads_per_block.x), 1, 1);
+		static dim3 blocks(((agents_s.size + threads_per_block.x - 1) / threads_per_block.x), 1, 1);
 		static const size_t bytes = sizeof(int) * agents_s.size;
 
 		kernel_launch(blocks, threads_per_block, &agents_d);
