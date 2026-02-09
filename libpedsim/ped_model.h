@@ -63,8 +63,8 @@ namespace Ped{
 		// The agents in this scenario
 		std::vector<Tagent*> agents;
 		struct agents agents_s;
-		struct agents *agents_d;
-        size_t num_blocks;
+		struct agents agents_d;
+		size_t num_blocks;
 
 		// The waypoints in this scenario
 		std::vector<Twaypoint*> destinations;

@@ -49,7 +49,9 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		printf("Data structures set up for SIMD complete.\n");
 		break;
 	case Ped::CUDA:
-		printf("IMPLEMENT CUDA\n");
+		printf("Setting up data structures for cuda...\n");
+		cuda_init();
+		printf("Data structures set up for cuda complete.\n");
 		break;
 	default:
 		printf("No extra setup needed for given implementation\n");
@@ -152,33 +154,42 @@ void Ped::Model::cuda_init(void) {
 
 	// -- device --
 	num_blocks = agents_size / THREADS_PER_BLOCK;
-	cudaMalloc(&agents_d, sizeof(struct agents));
-	cudaMalloc(&agents_d->x, int_bytes);
-	cudaMalloc(&agents_d->y, int_bytes);
-	cudaMalloc(&agents_d->desiredPositionX, int_bytes);
-	cudaMalloc(&agents_d->desiredPositionY, int_bytes);
-	cudaMalloc(&agents_d->destination_idx, ssize_t_bytes);
-	cudaMalloc(&agents_d->waypoints.x, ptr_bytes);
-	cudaMalloc(&agents_d->waypoints.y, ptr_bytes);
-	cudaMalloc(&agents_d->waypoints.r, ptr_bytes);
-	for (size_t i = 0; i < agents_size; i++) {
-		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
-		cudaMalloc(&agents_d->waypoints.x[i], bytes);
-		cudaMalloc(&agents_d->waypoints.y[i], bytes);
-		cudaMalloc(&agents_d->waypoints.r[i], bytes);
-	}
-	cudaMalloc(&agents_d->waypoints.sz, size_t_bytes);
 
-	cudaMemcpy(&agents_d->size, &agents_s.size, sizeof(size_t), cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d->x, agents_s.x, int_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d->y, agents_s.y, int_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d->destination_idx, agents_s.destination_idx, ssize_t_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d->waypoints.sz, agents_s.waypoints.sz, size_t_bytes, cudaMemcpyHostToDevice);
+	agents_d = {0};
+	double **wps_x, **wps_y, **wps_r;
+	wps_x = (double **)malloc(ptr_bytes);
+	wps_y = (double **)malloc(ptr_bytes);
+	wps_r = (double **)malloc(ptr_bytes);
+
+	cudaMalloc(&agents_d.x, int_bytes);
+	cudaMalloc(&agents_d.y, int_bytes);
+	cudaMalloc(&agents_d.desiredPositionX, int_bytes);
+	cudaMalloc(&agents_d.desiredPositionY, int_bytes);
+	cudaMalloc(&agents_d.destination_idx, ssize_t_bytes);
+	cudaMalloc(&agents_d.waypoints.x, ptr_bytes);
+	cudaMalloc(&agents_d.waypoints.y, ptr_bytes);
+	cudaMalloc(&agents_d.waypoints.r, ptr_bytes);
 	for (size_t i = 0; i < agents_size; i++) {
 		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
-		cudaMemcpy(agents_d->waypoints.x[i], agents_s.waypoints.x[i], bytes, cudaMemcpyHostToDevice);
-		cudaMemcpy(agents_d->waypoints.y[i], agents_s.waypoints.y[i], bytes, cudaMemcpyHostToDevice);
-		cudaMemcpy(agents_d->waypoints.r[i], agents_s.waypoints.r[i], bytes, cudaMemcpyHostToDevice);
+		cudaMalloc(&wps_x[i], bytes);
+		cudaMalloc(&wps_y[i], bytes);
+		cudaMalloc(&wps_r[i], bytes);
+	}
+	cudaMalloc(&agents_d.waypoints.sz, size_t_bytes);
+
+	cudaMemcpy(agents_d.waypoints.x, wps_x, ptr_bytes, cudaMemcpyHostToDevice);
+	cudaMemcpy(agents_d.waypoints.y, wps_y, ptr_bytes, cudaMemcpyHostToDevice);
+	cudaMemcpy(agents_d.waypoints.r, wps_r, ptr_bytes, cudaMemcpyHostToDevice);
+
+	cudaMemcpy(agents_d.x, agents_s.x, int_bytes, cudaMemcpyHostToDevice);
+	cudaMemcpy(agents_d.y, agents_s.y, int_bytes, cudaMemcpyHostToDevice);
+	cudaMemcpy(agents_d.destination_idx, agents_s.destination_idx, ssize_t_bytes, cudaMemcpyHostToDevice);
+	cudaMemcpy(agents_d.waypoints.sz, agents_s.waypoints.sz, size_t_bytes, cudaMemcpyHostToDevice);
+	for (size_t i = 0; i < agents_size; i++) {
+		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
+		cudaMemcpy(wps_x[i], agents_s.waypoints.x[i], bytes, cudaMemcpyHostToDevice);
+		cudaMemcpy(wps_y[i], agents_s.waypoints.y[i], bytes, cudaMemcpyHostToDevice);
+		cudaMemcpy(wps_r[i], agents_s.waypoints.r[i], bytes, cudaMemcpyHostToDevice);
 	}
 }
 
@@ -268,10 +279,11 @@ void Ped::Model::tick() {
 		static dim3 blocks(agents_s.size / threads_per_block.x, 1, 1);
 		static const size_t bytes = sizeof(int) * agents_s.size;
 
-		kernel_launch(blocks, threads_per_block, agents_d);
+		kernel_launch(blocks, threads_per_block, &agents_d);
 
-		cudaMemcpy(agents_s.x, agents_d->x, bytes, cudaMemcpyDeviceToHost);
-		cudaMemcpy(agents_s.y, agents_d->y, bytes, cudaMemcpyDeviceToHost);
+		cudaMemcpy(agents_s.x, agents_d.x, bytes, cudaMemcpyDeviceToHost);
+		cudaMemcpy(agents_s.y, agents_d.y, bytes, cudaMemcpyDeviceToHost);
+		break;
 	}
 	default:
 		fprintf(stderr, "ERROR: NOT IMPLEMENTED\n");
@@ -379,21 +391,20 @@ void Ped::Model::simd_dinit() {
 
 void Ped::Model::cuda_dinit() {
 	// -- device --
-	cudaFree(agents_d->x);
-	cudaFree(agents_d->y);
-	cudaFree(agents_d->desiredPositionX);
-	cudaFree(agents_d->desiredPositionY);
-	cudaFree(agents_d->destination_idx);
-	for (size_t i = 0; i < agents_d->size; i++) {
-		cudaFree(agents_d->waypoints.x[i]);
-		cudaFree(agents_d->waypoints.y[i]);
-		cudaFree(agents_d->waypoints.r[i]);
-	}
-	cudaFree(agents_d->waypoints.x);
-	cudaFree(agents_d->waypoints.y);
-	cudaFree(agents_d->waypoints.r);
-	cudaFree(agents_d->waypoints.sz);
-	cudaFree(agents_d);
+	// cudaFree(agents_d.x);
+	// cudaFree(agents_d.y);
+	// cudaFree(agents_d.desiredPositionX);
+	// cudaFree(agents_d.desiredPositionY);
+	// cudaFree(agents_d.destination_idx);
+	// for (size_t i = 0; i < agents_d.size; i++) {
+	// 	cudaFree(agents_d.waypoints.x[i]);
+	// 	cudaFree(agents_d.waypoints.y[i]);
+	// 	cudaFree(agents_d.waypoints.r[i]);
+	// }
+	// cudaFree(agents_d.waypoints.x);
+	// cudaFree(agents_d.waypoints.y);
+	// cudaFree(agents_d.waypoints.r);
+	// cudaFree(agents_d.waypoints.sz);
 
 	// -- host --
 	cudaFreeHost(agents_s.x);
@@ -423,12 +434,11 @@ Ped::Model::~Model() {
 		printf("Data structures for SIMD released.\n");
 		break;
 	case Ped::CUDA:
-		printf("IMPLEMENT CUDA\n");
+		printf("Cleaning up data structures for cuda...\n");
+		cuda_dinit();
+		printf("Data structures for cuda released.\n");
 		break;
 	default:
 		printf("No extra cleanup needed for given implementation.\n");
-	}
-	if (this->implementation != Ped::VECTOR) {
-		return;
 	}
 }
