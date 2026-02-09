@@ -18,6 +18,7 @@ include config.mk
 
 # If CUDA is available, add the CUDA paths and libraries
 ifdef CUDA_AVAILABLE
+INCPATH += -I/usr/local/cuda-12.6/targets/x86_64-linux/include/
 LIBPATH += -L/usr/local/cuda/lib64
 LIBS += -lcudart
 endif

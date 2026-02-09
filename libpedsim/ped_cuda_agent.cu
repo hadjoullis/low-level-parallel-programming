@@ -58,12 +58,13 @@ static __global__ void cuda_computeNextDesiredPosition(double **wps_x,
 	}
 	const int agent_x = x[agent_idx];
 	const int agent_y = y[agent_idx];
-	const ssize_t dst_idx = destination_idx[agent_idx];
+	ssize_t dst_idx = destination_idx[agent_idx];
 
 	ssize_t nextDestination_idx = get_nextDestination_idx(
 		wps_x, wps_y, wps_r, wps_sz, agent_x, agent_y, dst_idx, agent_idx);
 	destination_idx[agent_idx] = nextDestination_idx;
-	if (destination_idx[agent_idx] == -1) {
+	dst_idx = nextDestination_idx;
+	if (dst_idx == -1) {
 		return; // no destination, no need to compute where to move to
 	}
 

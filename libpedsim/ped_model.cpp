@@ -411,20 +411,20 @@ void Ped::Model::cuda_dinit() {
 	cudaDeviceReset();
 
 	// -- host --
-	cudaFreeHost(agents_s.x);
-	cudaFreeHost(agents_s.y);
-	cudaFreeHost(agents_s.desiredPositionX);
-	cudaFreeHost(agents_s.desiredPositionY);
-	cudaFreeHost(agents_s.destination_idx);
-	for (size_t i = 0; i < agents_s.size; i++) {
-		cudaFreeHost(agents_s.waypoints.x[i]);
-		cudaFreeHost(agents_s.waypoints.y[i]);
-		cudaFreeHost(agents_s.waypoints.r[i]);
-	}
-	cudaFreeHost(agents_s.waypoints.x);
-	cudaFreeHost(agents_s.waypoints.y);
-	cudaFreeHost(agents_s.waypoints.r);
-	cudaFreeHost(agents_s.waypoints.sz);
+	// cudaFreeHost(agents_s.x);
+	// cudaFreeHost(agents_s.y);
+	// cudaFreeHost(agents_s.desiredPositionX);
+	// cudaFreeHost(agents_s.desiredPositionY);
+	// cudaFreeHost(agents_s.destination_idx);
+	// for (size_t i = 0; i < agents_s.size; i++) {
+	// 	cudaFreeHost(agents_s.waypoints.x[i]);
+	// 	cudaFreeHost(agents_s.waypoints.y[i]);
+	// 	cudaFreeHost(agents_s.waypoints.r[i]);
+	// }
+	// cudaFreeHost(agents_s.waypoints.x);
+	// cudaFreeHost(agents_s.waypoints.y);
+	// cudaFreeHost(agents_s.waypoints.r);
+	// cudaFreeHost(agents_s.waypoints.sz);
 }
 
 Ped::Model::~Model() {

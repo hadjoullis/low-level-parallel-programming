@@ -21,6 +21,7 @@ MOCFILES=QTSimulation.moc
 include config.mk
 # Add CUDA paths and libraries if CUDA_AVAILABLE is set
 ifdef CUDA_AVAILABLE
+INCPATH += -I/usr/local/cuda-12.6/targets/x86_64-linux/include/
 LIBPATH += -L/usr/local/cuda/lib64
 LIBS += -lcudart
 endif
