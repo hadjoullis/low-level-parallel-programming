@@ -130,15 +130,9 @@ void Ped::Model::tick() {
 		size_t i;
 		for (i = 0; i + STEPS <= agents_s.size; i += STEPS) {
 			simd_computeNextDesiredPosition(&agents_s, i);
-			const __m256i x = _mm256_load_epi32(&agents_s.desiredPositionX[i]);
-			const __m256i y = _mm256_load_epi32(&agents_s.desiredPositionY[i]);
-			_mm256_store_epi32(&agents_s.x[i], x);
-			_mm256_store_epi32(&agents_s.y[i], y);
 		}
 		for (; i < agents_s.size; i++) {
 			single_computeNextDesiredPosition(&agents_s, i);
-			agents_s.x[i] = agents_s.desiredPositionX[i];
-			agents_s.y[i] = agents_s.desiredPositionY[i];
 		}
 		break;
 	}

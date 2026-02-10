@@ -16,8 +16,6 @@ void cuda_init(std::vector<Ped::Tagent *> agents, struct agents *agents_s, struc
 	const size_t ptr_bytes = sizeof(double *) * agents_size;
 	cudaMallocHost(&agents_s->x, int_bytes);
 	cudaMallocHost(&agents_s->y, int_bytes);
-	cudaMallocHost(&agents_s->desiredPositionX, int_bytes);
-	cudaMallocHost(&agents_s->desiredPositionY, int_bytes);
 	cudaMallocHost(&agents_s->destination_idx, ssize_t_bytes);
 	cudaMallocHost(&agents_s->waypoints.x, ptr_bytes);
 	cudaMallocHost(&agents_s->waypoints.y, ptr_bytes);
@@ -34,8 +32,6 @@ void cuda_init(std::vector<Ped::Tagent *> agents, struct agents *agents_s, struc
 	for (size_t i = 0; i < agents_size; i++) {
 		agents_s->x[i] = agents[i]->getX();
 		agents_s->y[i] = agents[i]->getY();
-		// agents_s->desiredPositionX[i]: not set
-		// agents_s->desiredPositionY[i]: not set
 		agents_s->destination_idx[i] = -1;
 		// agents_s->waypoints: already set
 		agents_s->waypoints.sz[i] = agents[i]->getWaypointsSize();
@@ -56,8 +52,6 @@ void cuda_init(std::vector<Ped::Tagent *> agents, struct agents *agents_s, struc
 
 	cudaMalloc(&agents_d->x, int_bytes);
 	cudaMalloc(&agents_d->y, int_bytes);
-	cudaMalloc(&agents_d->desiredPositionX, int_bytes);
-	cudaMalloc(&agents_d->desiredPositionY, int_bytes);
 	cudaMalloc(&agents_d->destination_idx, ssize_t_bytes);
 	cudaMalloc(&agents_d->waypoints.x, ptr_bytes);
 	cudaMalloc(&agents_d->waypoints.y, ptr_bytes);
@@ -94,8 +88,6 @@ void cuda_dinit(struct agents *agents_s) {
 	// -- host --
 	cudaFreeHost(agents_s->x);
 	cudaFreeHost(agents_s->y);
-	cudaFreeHost(agents_s->desiredPositionX);
-	cudaFreeHost(agents_s->desiredPositionY);
 	cudaFreeHost(agents_s->destination_idx);
 	for (size_t i = 0; i < agents_s->size; i++) {
 		cudaFreeHost(agents_s->waypoints.x[i]);
@@ -153,8 +145,6 @@ static __global__ void cuda_computeNextDesiredPosition(double **wps_x,
 													   size_t size,
 													   int *x,
 													   int *y,
-													   int *desiredPositionX,
-													   int *desiredPositionY,
 													   ssize_t *destination_idx) {
 	const size_t agent_idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (agent_idx >= size) {
@@ -175,11 +165,9 @@ static __global__ void cuda_computeNextDesiredPosition(double **wps_x,
 	const double diffX = wps_x[agent_idx][dst_idx] - agent_x;
 	const double diffY = wps_y[agent_idx][dst_idx] - agent_y;
 	const double len = sqrt(diffX * diffX + diffY * diffY);
-	desiredPositionX[agent_idx] = (int)round(agent_x + diffX / len);
-	desiredPositionY[agent_idx] = (int)round(agent_y + diffY / len);
 
-	x[agent_idx] = desiredPositionX[agent_idx];
-	y[agent_idx] = desiredPositionY[agent_idx];
+	x[agent_idx] = (int)round(agent_x + diffX / len);
+	y[agent_idx] = (int)round(agent_y + diffY / len);
 }
 
 void kernel_launch(dim3 blocks, dim3 threads_per_block, const struct agents *agents) {
@@ -190,7 +178,5 @@ void kernel_launch(dim3 blocks, dim3 threads_per_block, const struct agents *age
 																   agents->size,
 																   agents->x,
 																   agents->y,
-																   agents->desiredPositionX,
-																   agents->desiredPositionY,
 																   agents->destination_idx);
 }

@@ -41,10 +41,8 @@ struct waypoints {
 };
 
 struct agents {
-	size_t size; // number of agents this struct holds
-	int *x, *y;	 // The agents' current position
-	int *desiredPositionX,
-		*desiredPositionY;		// The agents' desired next position
+	size_t size;				// number of agents this struct holds
+	int *x, *y;					// The agents' current position
 	struct waypoints waypoints; // The ring-like array of all destinations that
 								// each agent still has to visit
 	ssize_t *destination_idx;	// The index of each agent's current destination
