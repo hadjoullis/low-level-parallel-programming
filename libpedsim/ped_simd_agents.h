@@ -23,6 +23,9 @@
 #include <stdlib.h>
 #include <sys/types.h>
 
+#include "ped_agent.h"
+#include "ped_waypoint.h"
+
 // max sizeof double vs size_t vs ssize_t vs int: 8
 #define STEPS (sizeof(__m512) / 8)
 #define ALIGN (512 / STEPS)
@@ -48,10 +51,11 @@ struct agents {
 								// (may require several steps to reach)
 };
 
+void simd_init(std::vector<Ped::Tagent *> agents, struct agents *agents_s);
+void simd_dinit(struct agents *agents_s);
+
 // Update the position according to get closer to the current destination
-void simd_computeNextDesiredPosition(const struct agents *agents,
-									 const size_t agent_idx);
-void single_computeNextDesiredPosition(const struct agents *agents,
-									   const size_t agent_idx);
+void simd_computeNextDesiredPosition(const struct agents *agents, const size_t agent_idx);
+void single_computeNextDesiredPosition(const struct agents *agents, const size_t agent_idx);
 
 #endif

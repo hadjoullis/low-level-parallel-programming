@@ -68,11 +68,6 @@ namespace Ped{
 		// The waypoints in this scenario
 		std::vector<Twaypoint*> destinations;
 
-		void simd_init(void);
-		void simd_dinit(void);
-
-		void cuda_init(void);
-		void cuda_dinit(void);
 		void pthread_tick(const int k, int id);
 
 		// Moves an agent towards its next position

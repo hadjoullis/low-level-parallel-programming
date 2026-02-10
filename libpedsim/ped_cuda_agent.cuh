@@ -16,12 +16,17 @@
 #ifndef _ped_cuda_agent_h_
 #define _ped_cuda_agent_h_ 1
 
-#include "ped_model.h"
 #include <cuda_runtime.h>
 #include <string.h>
 
+#include "ped_agent.h"
+#include "ped_simd_agents.h"
+#include "ped_waypoint.h"
+
 #define THREADS_PER_BLOCK 512
 
+void cuda_init(std::vector<Ped::Tagent *> agents, struct agents *agents_s, struct agents *agents_d);
+void cuda_dinit(struct agents *agents_s);
 void kernel_launch(dim3 blocks, dim3 threads_per_block, const struct agents *agents);
 
 #endif

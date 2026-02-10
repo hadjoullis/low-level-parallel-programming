@@ -45,155 +45,20 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 	switch (implementation) {
 	case Ped::VECTOR:
 		printf("Setting up data structures for SIMD...\n");
-		simd_init();
+		agents_s = {0};
+		simd_init(agents, &agents_s);
 		printf("Data structures set up for SIMD complete.\n");
 		break;
 	case Ped::CUDA:
 		printf("Setting up data structures for cuda...\n");
-		cuda_init();
+		agents_s = {0};
+		agents_d = {0};
+		cuda_init(agents, &agents_s, &agents_d);
 		printf("Data structures set up for cuda complete.\n");
 		break;
 	default:
 		printf("No extra setup needed for given implementation\n");
 	}
-}
-
-void Ped::Model::simd_init(void) {
-	agents_s = {0};
-	const size_t agents_size = agents.size();
-	const size_t int_bytes = sizeof(int) * agents_size;
-	const size_t size_t_bytes = sizeof(size_t) * agents_size;
-	const size_t ssize_t_bytes = sizeof(ssize_t) * agents_size;
-	const size_t ptr_bytes = sizeof(double *) * agents_size;
-	posix_memalign((void **)&agents_s.x, ALIGN, int_bytes);
-	posix_memalign((void **)&agents_s.y, ALIGN, int_bytes);
-	posix_memalign((void **)&agents_s.desiredPositionX, ALIGN, int_bytes);
-	posix_memalign((void **)&agents_s.desiredPositionY, ALIGN, int_bytes);
-	posix_memalign((void **)&agents_s.destination_idx, ALIGN, ssize_t_bytes);
-	posix_memalign((void **)&agents_s.waypoints.x, ALIGN, ptr_bytes);
-	posix_memalign((void **)&agents_s.waypoints.y, ALIGN, ptr_bytes);
-	posix_memalign((void **)&agents_s.waypoints.r, ALIGN, ptr_bytes);
-	for (size_t i = 0; i < agents_size; i++) {
-		// allocate one extra element so when we index with offset '-1' we do
-		// not go out of bounds ('simd_computeNextDesiredPosition')
-		const size_t bytes = sizeof(double) * (agents[i]->getWaypointsSize() + 1);
-		posix_memalign((void **)&agents_s.waypoints.x[i], ALIGN, bytes);
-		posix_memalign((void **)&agents_s.waypoints.y[i], ALIGN, bytes);
-		posix_memalign((void **)&agents_s.waypoints.r[i], ALIGN, bytes);
-
-		agents_s.waypoints.x[i]++;
-		agents_s.waypoints.y[i]++;
-		agents_s.waypoints.r[i]++;
-	}
-	posix_memalign((void **)&agents_s.waypoints.sz, ALIGN, size_t_bytes);
-
-	agents_s.size = agents_size;
-	for (size_t i = 0; i < agents_size; i++) {
-		agents_s.x[i] = agents[i]->getX();
-		agents_s.y[i] = agents[i]->getY();
-		// agents_s.desiredPositionX[i]: not set
-		// agents_s.desiredPositionY[i]: not set
-		agents_s.destination_idx[i] = -1;
-		// we need to ensure that if we index with '-1' the condition 'len <
-		// dst_r' evaluates to true so we satisfy both clauses of the second
-		// if statement
-		agents_s.waypoints.x[i][-1] = 0;
-		agents_s.waypoints.y[i][-1] = 0;
-		agents_s.waypoints.r[i][-1] = DBL_MAX;
-		// agents_s.waypoints: already set
-		agents_s.waypoints.sz[i] = agents[i]->getWaypointsSize();
-		for (size_t j = 0; j < agents_s.waypoints.sz[i]; j++) {
-			auto wp = agents[i]->getWaypoint(j);
-			agents_s.waypoints.x[i][j] = wp->getx();
-			agents_s.waypoints.y[i][j] = wp->gety();
-			agents_s.waypoints.r[i][j] = wp->getr();
-		}
-	}
-}
-
-void Ped::Model::cuda_init(void) {
-	// -- host --
-	agents_s = {0};
-	const size_t agents_size = agents.size();
-	const size_t int_bytes = sizeof(int) * agents_size;
-	const size_t size_t_bytes = sizeof(size_t) * agents_size;
-	const size_t ssize_t_bytes = sizeof(ssize_t) * agents_size;
-	const size_t ptr_bytes = sizeof(double *) * agents_size;
-	cudaMallocHost(&agents_s.x, int_bytes);
-	cudaMallocHost(&agents_s.y, int_bytes);
-	cudaMallocHost(&agents_s.desiredPositionX, int_bytes);
-	cudaMallocHost(&agents_s.desiredPositionY, int_bytes);
-	cudaMallocHost(&agents_s.destination_idx, ssize_t_bytes);
-	cudaMallocHost(&agents_s.waypoints.x, ptr_bytes);
-	cudaMallocHost(&agents_s.waypoints.y, ptr_bytes);
-	cudaMallocHost(&agents_s.waypoints.r, ptr_bytes);
-	for (size_t i = 0; i < agents_size; i++) {
-		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
-		cudaMallocHost(&agents_s.waypoints.x[i], bytes);
-		cudaMallocHost(&agents_s.waypoints.y[i], bytes);
-		cudaMallocHost(&agents_s.waypoints.r[i], bytes);
-	}
-	cudaMallocHost(&agents_s.waypoints.sz, size_t_bytes);
-
-	agents_s.size = agents_size;
-	for (size_t i = 0; i < agents_size; i++) {
-		agents_s.x[i] = agents[i]->getX();
-		agents_s.y[i] = agents[i]->getY();
-		// agents_s.desiredPositionX[i]: not set
-		// agents_s.desiredPositionY[i]: not set
-		agents_s.destination_idx[i] = -1;
-		// agents_s.waypoints: already set
-		agents_s.waypoints.sz[i] = agents[i]->getWaypointsSize();
-		for (size_t j = 0; j < agents_s.waypoints.sz[i]; j++) {
-			auto wp = agents[i]->getWaypoint(j);
-			agents_s.waypoints.x[i][j] = wp->getx();
-			agents_s.waypoints.y[i][j] = wp->gety();
-			agents_s.waypoints.r[i][j] = wp->getr();
-		}
-	}
-
-	// -- device --
-	agents_d = {0};
-	agents_d.size = agents_size;
-	double **wps_x, **wps_y, **wps_r;
-	wps_x = (double **)malloc(ptr_bytes);
-	wps_y = (double **)malloc(ptr_bytes);
-	wps_r = (double **)malloc(ptr_bytes);
-
-	cudaMalloc(&agents_d.x, int_bytes);
-	cudaMalloc(&agents_d.y, int_bytes);
-	cudaMalloc(&agents_d.desiredPositionX, int_bytes);
-	cudaMalloc(&agents_d.desiredPositionY, int_bytes);
-	cudaMalloc(&agents_d.destination_idx, ssize_t_bytes);
-	cudaMalloc(&agents_d.waypoints.x, ptr_bytes);
-	cudaMalloc(&agents_d.waypoints.y, ptr_bytes);
-	cudaMalloc(&agents_d.waypoints.r, ptr_bytes);
-	for (size_t i = 0; i < agents_size; i++) {
-		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
-		cudaMalloc(&wps_x[i], bytes);
-		cudaMalloc(&wps_y[i], bytes);
-		cudaMalloc(&wps_r[i], bytes);
-	}
-	cudaMalloc(&agents_d.waypoints.sz, size_t_bytes);
-
-	cudaMemcpy(agents_d.waypoints.x, wps_x, ptr_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d.waypoints.y, wps_y, ptr_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d.waypoints.r, wps_r, ptr_bytes, cudaMemcpyHostToDevice);
-
-	cudaMemcpy(agents_d.x, agents_s.x, int_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d.y, agents_s.y, int_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d.destination_idx, agents_s.destination_idx, ssize_t_bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(agents_d.waypoints.sz, agents_s.waypoints.sz, size_t_bytes, cudaMemcpyHostToDevice);
-	for (size_t i = 0; i < agents_size; i++) {
-		const size_t bytes = sizeof(double) * agents[i]->getWaypointsSize();
-		cudaMemcpy(wps_x[i], agents_s.waypoints.x[i], bytes, cudaMemcpyHostToDevice);
-		cudaMemcpy(wps_y[i], agents_s.waypoints.y[i], bytes, cudaMemcpyHostToDevice);
-		cudaMemcpy(wps_r[i], agents_s.waypoints.r[i], bytes, cudaMemcpyHostToDevice);
-	}
-
-    free(wps_x);
-    free(wps_y);
-    free(wps_r);
 }
 
 void Ped::Model::pthread_tick(const int k, int id) {
@@ -372,74 +237,20 @@ void Ped::Model::cleanup() {
 	// Nothing to do here right now.
 }
 
-void Ped::Model::simd_dinit() {
-	free(agents_s.x);
-	free(agents_s.y);
-	free(agents_s.desiredPositionX);
-	free(agents_s.desiredPositionY);
-	free(agents_s.destination_idx);
-	for (size_t i = 0; i < agents_s.size; i++) {
-		agents_s.waypoints.x[i]--;
-		agents_s.waypoints.y[i]--;
-		agents_s.waypoints.r[i]--;
-		free(agents_s.waypoints.x[i]);
-		free(agents_s.waypoints.y[i]);
-		free(agents_s.waypoints.r[i]);
-	}
-	free(agents_s.waypoints.x);
-	free(agents_s.waypoints.y);
-	free(agents_s.waypoints.r);
-	free(agents_s.waypoints.sz);
-}
-
-void Ped::Model::cuda_dinit() {
-	// -- device --
-	// cudaFree(agents_d.x);
-	// cudaFree(agents_d.y);
-	// cudaFree(agents_d.desiredPositionX);
-	// cudaFree(agents_d.desiredPositionY);
-	// cudaFree(agents_d.destination_idx);
-	// for (size_t i = 0; i < agents_d.size; i++) {
-	// 	cudaFree(agents_d.waypoints.x[i]);
-	// 	cudaFree(agents_d.waypoints.y[i]);
-	// 	cudaFree(agents_d.waypoints.r[i]);
-	// }
-	// cudaFree(agents_d.waypoints.x);
-	// cudaFree(agents_d.waypoints.y);
-	// cudaFree(agents_d.waypoints.r);
-	// cudaFree(agents_d.waypoints.sz);
-	cudaDeviceReset();
-
-	// -- host --
-	// cudaFreeHost(agents_s.x);
-	// cudaFreeHost(agents_s.y);
-	// cudaFreeHost(agents_s.desiredPositionX);
-	// cudaFreeHost(agents_s.desiredPositionY);
-	// cudaFreeHost(agents_s.destination_idx);
-	// for (size_t i = 0; i < agents_s.size; i++) {
-	// 	cudaFreeHost(agents_s.waypoints.x[i]);
-	// 	cudaFreeHost(agents_s.waypoints.y[i]);
-	// 	cudaFreeHost(agents_s.waypoints.r[i]);
-	// }
-	// cudaFreeHost(agents_s.waypoints.x);
-	// cudaFreeHost(agents_s.waypoints.y);
-	// cudaFreeHost(agents_s.waypoints.r);
-	// cudaFreeHost(agents_s.waypoints.sz);
-}
-
 Ped::Model::~Model() {
 	std::for_each(agents.begin(), agents.end(), [](Ped::Tagent *agent) { delete agent; });
 	std::for_each(
 		destinations.begin(), destinations.end(), [](Ped::Twaypoint *destination) { delete destination; });
+
 	switch (implementation) {
 	case Ped::VECTOR:
 		printf("Cleaning up data structures for SIMD...\n");
-		simd_dinit();
+		simd_dinit(&agents_s);
 		printf("Data structures for SIMD released.\n");
 		break;
 	case Ped::CUDA:
 		printf("Cleaning up data structures for cuda...\n");
-		cuda_dinit();
+		cuda_dinit(&agents_s);
 		printf("Data structures for cuda released.\n");
 		break;
 	default:

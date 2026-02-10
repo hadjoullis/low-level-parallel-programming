@@ -7,6 +7,78 @@
 //
 #include "ped_simd_agents.h"
 
+void simd_init(std::vector<Ped::Tagent *> agents, struct agents *agents_s) {
+	const size_t agents_size = agents.size();
+	const size_t int_bytes = sizeof(int) * agents_size;
+	const size_t size_t_bytes = sizeof(size_t) * agents_size;
+	const size_t ssize_t_bytes = sizeof(ssize_t) * agents_size;
+	const size_t ptr_bytes = sizeof(double *) * agents_size;
+	posix_memalign((void **)&agents_s->x, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s->y, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s->desiredPositionX, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s->desiredPositionY, ALIGN, int_bytes);
+	posix_memalign((void **)&agents_s->destination_idx, ALIGN, ssize_t_bytes);
+	posix_memalign((void **)&agents_s->waypoints.x, ALIGN, ptr_bytes);
+	posix_memalign((void **)&agents_s->waypoints.y, ALIGN, ptr_bytes);
+	posix_memalign((void **)&agents_s->waypoints.r, ALIGN, ptr_bytes);
+	for (size_t i = 0; i < agents_size; i++) {
+		// allocate one extra element so when we index with offset '-1' we do
+		// not go out of bounds ('simd_computeNextDesiredPosition')
+		const size_t bytes = sizeof(double) * (agents[i]->getWaypointsSize() + 1);
+		posix_memalign((void **)&agents_s->waypoints.x[i], ALIGN, bytes);
+		posix_memalign((void **)&agents_s->waypoints.y[i], ALIGN, bytes);
+		posix_memalign((void **)&agents_s->waypoints.r[i], ALIGN, bytes);
+
+		agents_s->waypoints.x[i]++;
+		agents_s->waypoints.y[i]++;
+		agents_s->waypoints.r[i]++;
+	}
+	posix_memalign((void **)&agents_s->waypoints.sz, ALIGN, size_t_bytes);
+
+	agents_s->size = agents_size;
+	for (size_t i = 0; i < agents_size; i++) {
+		agents_s->x[i] = agents[i]->getX();
+		agents_s->y[i] = agents[i]->getY();
+		// agents_s->desiredPositionX[i]: not set
+		// agents_s->desiredPositionY[i]: not set
+		agents_s->destination_idx[i] = -1;
+		// we need to ensure that if we index with '-1' the condition 'len <
+		// dst_r' evaluates to true so we satisfy both clauses of the second
+		// if statement
+		agents_s->waypoints.x[i][-1] = 0;
+		agents_s->waypoints.y[i][-1] = 0;
+		agents_s->waypoints.r[i][-1] = DBL_MAX;
+		// agents_s->waypoints: already set
+		agents_s->waypoints.sz[i] = agents[i]->getWaypointsSize();
+		for (size_t j = 0; j < agents_s->waypoints.sz[i]; j++) {
+			auto wp = agents[i]->getWaypoint(j);
+			agents_s->waypoints.x[i][j] = wp->getx();
+			agents_s->waypoints.y[i][j] = wp->gety();
+			agents_s->waypoints.r[i][j] = wp->getr();
+		}
+	}
+}
+
+void simd_dinit(struct agents *agents_s) {
+	free(agents_s->x);
+	free(agents_s->y);
+	free(agents_s->desiredPositionX);
+	free(agents_s->desiredPositionY);
+	free(agents_s->destination_idx);
+	for (size_t i = 0; i < agents_s->size; i++) {
+		agents_s->waypoints.x[i]--;
+		agents_s->waypoints.y[i]--;
+		agents_s->waypoints.r[i]--;
+		free(agents_s->waypoints.x[i]);
+		free(agents_s->waypoints.y[i]);
+		free(agents_s->waypoints.r[i]);
+	}
+	free(agents_s->waypoints.x);
+	free(agents_s->waypoints.y);
+	free(agents_s->waypoints.r);
+	free(agents_s->waypoints.sz);
+}
+
 static ssize_t single_get_nextDestination_idx(const struct agents *agents, const size_t agent_idx) {
 	ssize_t nextDestination_idx = -1;
 	bool agentReachedDestination = false;
@@ -105,9 +177,7 @@ static __m512i simd_get_nextDestination_idx(const struct agents *agents, const s
 	const __m512i nextDestination_idx_else = _mm512_load_epi64(&agents->destination_idx[agent_idx]);
 
 	const __m512i nextDestination_idx = _mm512_mask_blend_epi64(
-		_kand_mask8(agentReachedDestination, non_empty_sz),
-		nextDestination_idx_else,
-		nextDestination_idx_if);
+		_kand_mask8(agentReachedDestination, non_empty_sz), nextDestination_idx_else, nextDestination_idx_if);
 	return nextDestination_idx;
 }
 
