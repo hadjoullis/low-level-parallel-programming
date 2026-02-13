@@ -144,7 +144,9 @@ void Ped::Model::tick() {
 
 		kernel_launch(blocks, threads_per_block, &agents_d);
 
+
 		if (timing_mode) {
+			cudaDeviceSynchronize();
 			break;
 		}
 		cudaMemcpy(agents_s.x, agents_d.x, bytes, cudaMemcpyDeviceToHost);
