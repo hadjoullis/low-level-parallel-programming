@@ -5,10 +5,11 @@ SCENARIO="scenario.xml"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
+DIR=".test-$RANDOM"
 
 run_demo() {
 	local name="$(sed  's/-//g' <<<"$1")"
-	demo/demo "$@" --export-trace="/tmp/trace-$name.bin" "$SCENARIO" &>/dev/null
+	demo/demo "$@" --export-trace="$DIR/trace-$name.bin" "$SCENARIO" &>/dev/null
 }
 
 run_serial() {
@@ -31,17 +32,23 @@ run_cuda() {
 	run_demo --cuda
 }
 
+
+mkdir "$DIR"
+
+if ! [ -f demo/demo ]; then
+	echo "Binary not found, please compile first"
+	exit 1
+fi
 echo "Testing implementations..."
 
 run_serial
 
 for impl in "${IMPLS[@]}"; do
- 	target="/tmp/trace-$impl.bin"
-	rm -f "$target"
+ 	target="$DIR/trace-$impl.bin"
 	echo -n "Testing $impl... "
 	"run_$impl"
 
-	if cmp -s "/tmp/trace-seq.bin" "$target"; then
+	if cmp -s "$DIR/trace-seq.bin" "$target"; then
 		echo -e "${GREEN}SUCCESS${NC}"
 	else
 		echo -e "${RED}FAILURE${NC}"
@@ -49,3 +56,5 @@ for impl in "${IMPLS[@]}"; do
 done
 
 echo "Testing implementations complete"
+
+rm -rf "$DIR"
