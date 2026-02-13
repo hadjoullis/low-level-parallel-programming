@@ -21,7 +21,7 @@
 
 void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 					   std::vector<Twaypoint *> destinationsInScenario,
-					   IMPLEMENTATION implementation) {
+					   IMPLEMENTATION implementation, bool timing_mode) {
 #ifndef NOCUDA
 	// Convenience test: does CUDA work on this machine?
 	cuda_test();
@@ -38,6 +38,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 
 	// Sets the chosen implemenation. Standard in the given code is SEQ
 	this->implementation = implementation;
+	this->timing_mode = timing_mode;
 
 	// Set up heatmap (relevant for Assignment 4)
 	setupHeatmapSeq();
@@ -143,6 +144,9 @@ void Ped::Model::tick() {
 
 		kernel_launch(blocks, threads_per_block, &agents_d);
 
+		if (timing_mode) {
+			break;
+		}
 		cudaMemcpy(agents_s.x, agents_d.x, bytes, cudaMemcpyDeviceToHost);
 		cudaMemcpy(agents_s.y, agents_d.y, bytes, cudaMemcpyDeviceToHost);
 		break;
