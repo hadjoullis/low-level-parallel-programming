@@ -19,6 +19,7 @@ submission: clean
 	cp -r libpedsim submit/
 	cp run.sh submit/
 	cp run-impls.sh submit/
+	cp test-impls.sh submit/
 	cp Makefile submit/
 	cp scenario.xml submit/
 	cp scenario_box.xml submit/
