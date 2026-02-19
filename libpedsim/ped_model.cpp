@@ -13,7 +13,7 @@
 #include <stack>
 #include <thread>
 
-#ifndef NOCDUA
+#ifndef NOCUDA
 #include "cuda_testkernel.h"
 #endif
 
@@ -21,7 +21,8 @@
 
 void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 					   std::vector<Twaypoint *> destinationsInScenario,
-					   IMPLEMENTATION implementation, bool timing_mode) {
+					   IMPLEMENTATION implementation,
+					   bool timing_mode) {
 #ifndef NOCUDA
 	// Convenience test: does CUDA work on this machine?
 	cuda_test();
@@ -50,6 +51,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		simd_init(agents, &agents_s);
 		printf("Data structures set up for SIMD complete.\n");
 		break;
+#ifndef NOCUDA
 	case Ped::CUDA:
 		printf("Setting up data structures for cuda...\n");
 		agents_s = {0};
@@ -57,6 +59,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		cuda_init(agents, &agents_s, &agents_d);
 		printf("Data structures set up for cuda complete.\n");
 		break;
+#endif
 	default:
 		printf("No extra setup needed for given implementation\n");
 	}
@@ -137,13 +140,13 @@ void Ped::Model::tick() {
 		}
 		break;
 	}
+#ifndef NOCUDA
 	case Ped::CUDA: {
 		static dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
 		static dim3 blocks(((agents_s.size + threads_per_block.x - 1) / threads_per_block.x), 1, 1);
 		static const size_t bytes = sizeof(int) * agents_s.size;
 
 		kernel_launch(blocks, threads_per_block, &agents_d);
-
 
 		if (timing_mode) {
 			cudaDeviceSynchronize();
@@ -153,6 +156,7 @@ void Ped::Model::tick() {
 		cudaMemcpy(agents_s.y, agents_d.y, bytes, cudaMemcpyDeviceToHost);
 		break;
 	}
+#endif
 	default:
 		fprintf(stderr, "ERROR: NOT IMPLEMENTED\n");
 		exit(1);
@@ -248,11 +252,13 @@ Ped::Model::~Model() {
 		simd_dinit(&agents_s);
 		printf("Data structures for SIMD released.\n");
 		break;
+#ifndef NOCUDA
 	case Ped::CUDA:
 		printf("Cleaning up data structures for cuda...\n");
 		cuda_dinit(&agents_s);
 		printf("Data structures for cuda released.\n");
 		break;
+#endif
 	default:
 		printf("No extra cleanup needed for given implementation.\n");
 	}

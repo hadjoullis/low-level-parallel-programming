@@ -17,7 +17,10 @@
 
 #include "ped_agent.h"
 #include "ped_simd_agents.h"
+
+#ifndef NOCUDA
 #include "ped_cuda_agent.cuh"
+#endif
 
 namespace Ped{
 	class Tagent;
