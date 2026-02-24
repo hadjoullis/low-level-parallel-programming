@@ -38,7 +38,7 @@
 
 
 void print_usage(char *command) {
-    printf("Usage: %s [--timing-mode|--export-trace[=export_trace.bin]] [--max-steps=100] [--help] [--cuda|--simd|--omp|--pthread|--seq] [scenario filename]\n", command);
+    printf("Usage: %s [--timing-mode|--export-trace[=export_trace.bin]] [--max-steps=100] [--help] [--cuda|--simd|--omp|--omp-mv|--pthread|--seq|--seq-mv] [scenario filename]\n", command);
     printf("There are three modes of execution:\n");
 #ifndef NOQT
     printf("\t the QT window mode (default if no argument is provided. But this is also deprecated. Please opt to use the --export-trace mode instead)\n");
@@ -73,8 +73,10 @@ int main(int argc, char*argv[]) {
             {"cuda", no_argument, NULL, 'c'},
             {"simd", no_argument, NULL, 's'},
             {"omp", no_argument, NULL, 'o'},
+            {"omp-mv", no_argument, NULL, '!'},
             {"pthread", no_argument, NULL, 'p'},
             {"seq", no_argument, NULL, 'q'},
+            {"seq-mv", no_argument, NULL, '?'},
             {0, 0, 0, 0}  // End of options
         };
 
@@ -124,6 +126,11 @@ int main(int argc, char*argv[]) {
                 std::cout << "Option --omp activated\n";
                 implementation_to_test = Ped::OMP;
                 break;
+            case '!':
+                // Handle --omp-mv
+                std::cout << "Option --omp-mv activated\n";
+                implementation_to_test = Ped::OMP_MV;
+                break;
             case 'p':
                 // Handle --pthread
                 std::cout << "Option --pthread activated\n";
@@ -133,6 +140,11 @@ int main(int argc, char*argv[]) {
                 // Handle --seq
                 std::cout << "Option --seq activated\n";
                 implementation_to_test = Ped::SEQ;
+                break;
+            case '?':
+                // Handle --seq-mv
+                std::cout << "Option --seq-mv activated\n";
+                implementation_to_test = Ped::SEQ_MV;
                 break;
             case 'm':
                 // Handle --max-steps with a numerical argument
@@ -170,7 +182,11 @@ int main(int argc, char*argv[]) {
             {
                 Ped::Model model;
                 ParseScenario parser(scenefile);
-                model.setup(parser.getAgents(), parser.getWaypoints(), Ped::SEQ, timing_mode);
+                Ped::IMPLEMENTATION baseline_impl = Ped::SEQ;
+                if (implementation_to_test == Ped::OMP_MV) {
+                    baseline_impl = Ped::SEQ_MV;
+                }
+                model.setup(parser.getAgents(), parser.getWaypoints(), baseline_impl, timing_mode);
                 Simulation *simulation = new TimingSimulation(model, max_steps);
 
                 // Simulation mode to use when profiling (without any GUI)

@@ -51,6 +51,11 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		simd_init(agents, &agents_s);
 		printf("Data structures set up for SIMD complete.\n");
 		break;
+	case Ped::OMP_MV:
+		printf("Setting up data structures for OMP_MV...\n");
+		regions_init();
+		printf("Data structures set up for OMP_MV complete.\n");
+		break;
 #ifndef NOCUDA
 	case Ped::CUDA:
 		printf("Setting up data structures for cuda...\n");
@@ -62,6 +67,47 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 #endif
 	default:
 		printf("No extra setup needed for given implementation\n");
+	}
+}
+
+void Ped::Model::regions_init(void) {
+	int x_start = 0;
+	const int region_width = GRID_WIDTH / NUM_REGIONS;
+	// make x_end inclusive for easier logistics
+	for (size_t i = 0; i < NUM_REGIONS; i++) {
+		regions[i].x_start = x_start;
+		regions[i].x_end = x_start + region_width - 1;
+		if (i == NUM_REGIONS - 1) {
+			regions[i].x_end = GRID_WIDTH;
+		}
+		x_start += region_width;
+
+		omp_init_lock(&regions[i].llock);
+		omp_init_lock(&regions[i].rlock);
+
+		// coordinates range is inclusive
+		regions[i].llock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
+		regions[i].rlock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
+
+		for (auto *const agent : this->agents) {
+			const int x = agent->getX();
+			const int y = agent->getY();
+			if (x == regions[i].x_start) {
+				regions[i].llock_taken[y] = true;
+			} else if (x == regions[i].x_end) {
+				regions[i].rlock_taken[y] = true;
+			}
+		}
+	}
+}
+
+void Ped::Model::regions_dinit(void) {
+	for (size_t i = 0; i < NUM_REGIONS; i++) {
+		omp_destroy_lock(&regions[i].llock);
+		omp_destroy_lock(&regions[i].rlock);
+
+		free(regions[i].llock_taken);
+		free(regions[i].rlock_taken);
 	}
 }
 
@@ -96,6 +142,13 @@ void Ped::Model::tick() {
 		}
 		break;
 	}
+	case Ped::SEQ_MV: {
+		for (auto *const agent : this->agents) {
+			agent->computeNextDesiredPosition();
+			move(agent);
+		}
+		break;
+	}
 	case Ped::OMP: {
 		auto &agents = this->agents;
 		const int n = agents.size();
@@ -108,6 +161,31 @@ void Ped::Model::tick() {
 			const int y = agent->getDesiredY();
 			agent->setX(x);
 			agent->setY(y);
+		}
+		break;
+	}
+	case Ped::OMP_MV: {
+		auto &agents = this->agents;
+		const int n = agents.size();
+
+#pragma omp parallel default(none) shared(n, agents)
+		{
+#pragma omp for
+			for (int i = 0; i < n; i++) {
+				auto *agent = agents[i];
+				agent->computeNextDesiredPosition();
+			}
+
+#pragma omp for
+			for (int i = 0; i < NUM_REGIONS; i++) {
+				get_agents_in_region(&regions[i]);
+				const int size = regions[i].region_agents.size();
+				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
+					move_parallel(&regions[i], agent_idx);
+				}
+				regions[i].region_agents.clear();
+				regions[i].taken_positions.clear();
+			}
 		}
 		break;
 	}
@@ -208,7 +286,6 @@ void Ped::Model::move(Ped::Tagent *agent) {
 	for (std::vector<pair<int, int>>::iterator it = prioritizedAlternatives.begin();
 		 it != prioritizedAlternatives.end();
 		 ++it) {
-
 		// If the current position is not yet taken by any neighbor
 		if (std::find(takenPositions.begin(), takenPositions.end(), *it) == takenPositions.end()) {
 
@@ -216,6 +293,201 @@ void Ped::Model::move(Ped::Tagent *agent) {
 			agent->setX((*it).first);
 			agent->setY((*it).second);
 
+			break;
+		}
+	}
+}
+
+void Ped::Model::get_agents_in_region(struct region_s *region) {
+	for (auto *const agent : this->agents) {
+		const int x = agent->getX();
+		const int y = agent->getY();
+		if (x >= region->x_start && x <= region->x_end) {
+			region->region_agents.push_back(agent);
+			struct pair_s pair = {.x = x, .y = y};
+			region->taken_positions.push_back(pair);
+		}
+		if ((region->x_start == 0 && x < 0) || (region->x_end == GRID_WIDTH && x > GRID_WIDTH)) {
+			region->region_agents.push_back(agent);
+			struct pair_s pair = {.x = x, .y = y};
+			region->taken_positions.push_back(pair);
+		}
+	}
+}
+
+bool Ped::Model::try_place_on_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
+	// assume x == x_start
+	omp_lock_t *lock = &region->llock;
+	bool *lock_taken = region->llock_taken;
+	if (x == region->x_end) {
+		lock = &region->rlock;
+		lock_taken = region->rlock_taken;
+	}
+
+	bool success = false;
+	omp_set_lock(lock);
+	if (!lock_taken[y]) {
+		agent->setX(x);
+		agent->setY(y);
+
+		lock_taken[y] = true;
+		success = true;
+	}
+	omp_unset_lock(lock);
+
+	return success;
+}
+
+bool Ped::Model::try_migrate_outside_grid(struct region_s *region, Ped::Tagent *agent, int x, int y) {
+	// since the same region is responsible for agents out of the
+	// grid, no need to lock
+	struct pair_s pair = {.x = x, .y = y};
+	if (find_pair(region->taken_positions, pair)) {
+		return false;
+	}
+
+	// assume x < 0
+	omp_lock_t *prev_lock = &region->llock;
+	bool *prev_lock_taken = region->llock_taken;
+	if (x > region->x_end) {
+		prev_lock = &region->rlock;
+		prev_lock_taken = region->rlock_taken;
+	}
+
+	omp_set_lock(prev_lock);
+	int prev_y = agent->getY();
+	agent->setX(x);
+	agent->setY(y);
+	prev_lock_taken[prev_y] = false;
+	omp_unset_lock(prev_lock);
+
+	return true;
+}
+
+bool Ped::Model::try_migrate(struct region_s *region, Ped::Tagent *agent, int x, int y) {
+	if (x < 0 || x > GRID_WIDTH) {
+		return try_migrate_outside_grid(region, agent, x, y);
+	}
+	// assume x == x_start - 1
+	struct region_s *adjacent_region = region + (x == region->x_start - 1 ? -1 : 1);
+
+	omp_lock_t *lock = &adjacent_region->rlock;
+	bool *lock_taken = adjacent_region->rlock_taken;
+
+	omp_lock_t *prev_lock = &region->llock;
+	bool *prev_lock_taken = region->llock_taken;
+	if (x == region->x_end + 1) {
+		lock = &adjacent_region->llock;
+		lock_taken = adjacent_region->llock_taken;
+
+		prev_lock = &region->rlock;
+		prev_lock_taken = region->rlock_taken;
+	}
+
+	bool success = false;
+try_again:
+	omp_set_lock(lock);
+	if (!lock_taken[y]) {
+		int acquired = omp_test_lock(prev_lock);
+		// int acquired = 1;
+		if (!acquired) {
+			omp_unset_lock(lock);
+			goto try_again;
+		}
+		int prev_y = agent->getY();
+
+		agent->setX(x);
+		agent->setY(y);
+
+		lock_taken[y] = true;
+		success = true;
+		prev_lock_taken[prev_y] = false;
+		omp_unset_lock(prev_lock);
+	}
+	omp_unset_lock(lock);
+
+	return success;
+}
+
+void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
+	omp_lock_t *prev_lock = &region->llock;
+	bool *prev_lock_taken = region->llock_taken;
+	if (agent->getX() == region->x_end) {
+		prev_lock = &region->rlock;
+		prev_lock_taken = region->rlock_taken;
+	}
+
+	int prev_y = agent->getY();
+
+	omp_set_lock(prev_lock);
+	agent->setX(x);
+	agent->setY(y);
+	prev_lock_taken[prev_y] = false;
+	omp_unset_lock(prev_lock);
+}
+
+bool Ped::Model::find_pair(std::vector<struct pair_s> taken_positions, struct pair_s pair) {
+	const int size = taken_positions.size();
+	for (size_t i = 0; i < size; i++) {
+		if (pair.x == taken_positions[i].x && pair.y == taken_positions[i].y) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void Ped::Model::move_parallel(struct region_s *region, int agent_idx) {
+	// Compute the three alternative positions that would bring the agent
+	// closer to his desiredPosition, starting with the desiredPosition itself
+	Ped::Tagent *agent = region->region_agents[agent_idx];
+	struct pair_s prioritizedAlternatives[NUM_ALTERNATIVES];
+	struct pair_s pDesired = {.x = agent->getDesiredX(), .y = agent->getDesiredY()};
+	size_t alternatives_cnt = 0;
+	prioritizedAlternatives[alternatives_cnt++] = pDesired;
+
+	int diffX = pDesired.x - agent->getX();
+	int diffY = pDesired.y - agent->getY();
+	struct pair_s p1, p2;
+	if (diffX == 0 || diffY == 0) {
+		// Agent wants to walk straight to North, South, West or East
+		p1.x = pDesired.x + diffY;
+		p1.y = pDesired.y + diffX;
+		p2.x = pDesired.x - diffY;
+		p2.y = pDesired.y - diffX;
+	} else {
+		// Agent wants to walk diagonally
+		p1.x = pDesired.x;
+		p1.y = agent->getY();
+		p2.x = agent->getX();
+		p2.y = pDesired.y;
+	}
+	prioritizedAlternatives[alternatives_cnt++] = p1;
+	prioritizedAlternatives[alternatives_cnt++] = p2;
+
+	// Find the first empty alternative position
+	bool success = false;
+	for (size_t i = 0; i < NUM_ALTERNATIVES; i++) {
+		const int desired_x = prioritizedAlternatives[i].x;
+		const int desired_y = prioritizedAlternatives[i].y;
+		if (desired_x == region->x_start || desired_x == region->x_end) {
+			success = try_place_on_border(region, agent, desired_x, desired_y);
+		} else if (desired_x == region->x_start - 1 || desired_x == region->x_end + 1) {
+			success = try_migrate(region, agent, desired_x, desired_y);
+		} else if (!find_pair(region->taken_positions, prioritizedAlternatives[i])) {
+			// If the current position is not yet taken by any neighbor
+			// Set the agent's position
+			if (agent->getX() == region->x_start || agent->getX() == region->x_end) {
+				leave_border(region, agent, desired_x, desired_y);
+			} else {
+				agent->setX(desired_x);
+				agent->setY(desired_y);
+			}
+
+			success = true;
+		}
+
+		if (success) {
+			region->taken_positions[agent_idx] = prioritizedAlternatives[i];
 			break;
 		}
 	}
