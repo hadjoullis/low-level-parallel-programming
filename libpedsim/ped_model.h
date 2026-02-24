@@ -98,7 +98,7 @@ class Model {
 	void regions_dinit(void);
 	void move_parallel(struct region_s *region, int agent_idx);
 	void get_agents_in_region(struct region_s *region);
-	void leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y);
+	void leave_border(struct region_s *region, Ped::Tagent *agent);
 	bool try_place_on_border(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool try_migrate(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool try_migrate_outside_grid(struct region_s *region, Ped::Tagent *agent, int x, int y);

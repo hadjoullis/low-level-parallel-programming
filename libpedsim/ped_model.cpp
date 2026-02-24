@@ -179,6 +179,10 @@ void Ped::Model::tick() {
 #pragma omp for
 			for (int i = 0; i < NUM_REGIONS; i++) {
 				get_agents_in_region(&regions[i]);
+			} // implicit barrier
+
+#pragma omp for
+			for (int i = 0; i < NUM_REGIONS; i++) {
 				const int size = regions[i].region_agents.size();
 				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
 					move_parallel(&regions[i], agent_idx);
@@ -389,7 +393,6 @@ try_again:
 	omp_set_lock(lock);
 	if (!lock_taken[y]) {
 		int acquired = omp_test_lock(prev_lock);
-		// int acquired = 1;
 		if (!acquired) {
 			omp_unset_lock(lock);
 			goto try_again;
@@ -409,8 +412,8 @@ try_again:
 	return success;
 }
 
-void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
-    // assume getX() == x_start
+void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent) {
+	// assume getX() == x_start
 	omp_lock_t *prev_lock = &region->llock;
 	bool *prev_lock_taken = region->llock_taken;
 	if (agent->getX() == region->x_end) {
@@ -420,8 +423,6 @@ void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent, int x
 
 	omp_set_lock(prev_lock);
 	int prev_y = agent->getY();
-	agent->setX(x);
-	agent->setY(y);
 	prev_lock_taken[prev_y] = false;
 	omp_unset_lock(prev_lock);
 }
@@ -478,12 +479,10 @@ void Ped::Model::move_parallel(struct region_s *region, int agent_idx) {
 			// If the current position is not yet taken by any neighbor
 			// Set the agent's position
 			if (agent->getX() == region->x_start || agent->getX() == region->x_end) {
-				leave_border(region, agent, desired_x, desired_y);
-			} else {
-				agent->setX(desired_x);
-				agent->setY(desired_y);
+				leave_border(region, agent);
 			}
-
+			agent->setX(desired_x);
+			agent->setY(desired_y);
 			success = true;
 		}
 
