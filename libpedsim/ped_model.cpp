@@ -410,6 +410,7 @@ try_again:
 }
 
 void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
+    // assume getX() == x_start
 	omp_lock_t *prev_lock = &region->llock;
 	bool *prev_lock_taken = region->llock_taken;
 	if (agent->getX() == region->x_end) {
@@ -417,9 +418,8 @@ void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent, int x
 		prev_lock_taken = region->rlock_taken;
 	}
 
-	int prev_y = agent->getY();
-
 	omp_set_lock(prev_lock);
+	int prev_y = agent->getY();
 	agent->setX(x);
 	agent->setY(y);
 	prev_lock_taken[prev_y] = false;
@@ -471,7 +471,8 @@ void Ped::Model::move_parallel(struct region_s *region, int agent_idx) {
 		const int desired_y = prioritizedAlternatives[i].y;
 		if (desired_x == region->x_start || desired_x == region->x_end) {
 			success = try_place_on_border(region, agent, desired_x, desired_y);
-		} else if (desired_x == region->x_start - 1 || desired_x == region->x_end + 1) {
+		} else if ((desired_x == region->x_start - 1 && agent->getX() == region->x_start) ||
+				   (desired_x == region->x_end + 1 && agent->getX() == region->x_end)) {
 			success = try_migrate(region, agent, desired_x, desired_y);
 		} else if (!find_pair(region->taken_positions, prioritizedAlternatives[i])) {
 			// If the current position is not yet taken by any neighbor
