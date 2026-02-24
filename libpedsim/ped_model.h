@@ -73,6 +73,7 @@ class Model {
 	struct agents agents_d;
 #define GRID_WIDTH 160
 #define GRID_HEIGHT 120
+#define NUM_LOCKS 4
 #define NUM_REGIONS 4
 #define NUM_ALTERNATIVES 3
 	struct pair_s {
@@ -80,7 +81,7 @@ class Model {
 	};
 	struct region_s {
 		int x_start, x_end;
-		omp_lock_t llock, rlock;
+		omp_lock_t *llock, *rlock;
 		bool *llock_taken, *rlock_taken;
 		std::vector<Tagent *> region_agents;
 		std::vector<struct pair_s> taken_positions;
@@ -103,6 +104,7 @@ class Model {
 	bool try_migrate(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool try_migrate_outside_grid(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool find_pair(std::vector<struct pair_s> taken_positions, struct pair_s pair);
+	inline int get_lock_idx(int y);
 
 	////////////
 	/// Everything below here won't be relevant until Assignment 3

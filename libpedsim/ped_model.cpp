@@ -82,15 +82,15 @@ void Ped::Model::regions_init(void) {
 		}
 		x_start += region_width;
 
-		omp_init_lock(&regions[i].llock);
-		omp_init_lock(&regions[i].rlock);
-
+		regions[i].llock = (omp_lock_t *)malloc(sizeof(omp_lock_t) * NUM_LOCKS);
+		regions[i].rlock = (omp_lock_t *)malloc(sizeof(omp_lock_t) * NUM_LOCKS);
+		for (size_t j = 0; j < NUM_LOCKS; j++) {
+			omp_init_lock(&regions[i].llock[j]);
+			omp_init_lock(&regions[i].rlock[j]);
+		}
 		// coordinates range is inclusive
 		regions[i].llock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
 		regions[i].rlock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
-
-		regions[i].region_agents.clear();
-		regions[i].taken_positions.clear();
 
 		for (auto *const agent : this->agents) {
 			const int x = agent->getX();
@@ -106,8 +106,12 @@ void Ped::Model::regions_init(void) {
 
 void Ped::Model::regions_dinit(void) {
 	for (size_t i = 0; i < NUM_REGIONS; i++) {
-		omp_destroy_lock(&regions[i].llock);
-		omp_destroy_lock(&regions[i].rlock);
+		for (size_t j = 0; j < NUM_LOCKS; j++) {
+			omp_destroy_lock(&regions[i].llock[j]);
+			omp_destroy_lock(&regions[i].rlock[j]);
+		}
+		free(regions[i].llock);
+		free(regions[i].rlock);
 
 		free(regions[i].llock_taken);
 		free(regions[i].rlock_taken);
@@ -322,30 +326,50 @@ void Ped::Model::get_agents_in_region(struct region_s *region) {
 	}
 }
 
+inline int Ped::Model::get_lock_idx(int y) {
+	static const int CHUNK = GRID_HEIGHT / NUM_LOCKS;
+	if (y >= GRID_HEIGHT) {
+		return NUM_LOCKS - 1;
+	}
+	return y / CHUNK;
+}
+
 bool Ped::Model::try_place_on_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
 	// assume x == x_start
-	omp_lock_t *lock = &region->llock;
+	omp_lock_t *lock = region->llock;
 	bool *lock_taken = region->llock_taken;
 	if (x == region->x_end) {
-		lock = &region->rlock;
+		lock = region->rlock;
 		lock_taken = region->rlock_taken;
 	}
+	const int lock_idx = get_lock_idx(y);
 
 	bool success = false;
-	omp_set_lock(lock);
+	const int prev_x = agent->getX();
+	const int prev_y = agent->getY();
+	const int prev_lock_idx = get_lock_idx(prev_y);
+try_again:
+	omp_set_lock(&lock[lock_idx]);
 	if (!lock_taken[y]) {
-		int prev_x = agent->getX();
-		int prev_y = agent->getY();
+		if (prev_x == region->x_start || prev_x == region->x_end) {
+			if (lock_idx == prev_lock_idx) {
+				lock_taken[prev_y] = false;
+			} else {
+				const int acquired = omp_test_lock(&lock[prev_lock_idx]);
+				if (!acquired) {
+					omp_unset_lock(&lock[lock_idx]);
+					goto try_again;
+				}
+				lock_taken[prev_y] = false;
+				omp_unset_lock(&lock[prev_lock_idx]);
+			}
+		}
 		agent->setX(x);
 		agent->setY(y);
-		if (prev_x == region->x_start || prev_x == region->x_end) {
-			lock_taken[prev_y] = false;
-		}
-
 		lock_taken[y] = true;
 		success = true;
 	}
-	omp_unset_lock(lock);
+	omp_unset_lock(&lock[lock_idx]);
 
 	return success;
 }
@@ -359,19 +383,20 @@ bool Ped::Model::try_migrate_outside_grid(struct region_s *region, Ped::Tagent *
 	}
 
 	// assume x < 0
-	omp_lock_t *prev_lock = &region->llock;
+	omp_lock_t *prev_lock = region->llock;
 	bool *prev_lock_taken = region->llock_taken;
 	if (x > region->x_end) {
-		prev_lock = &region->rlock;
+		prev_lock = region->rlock;
 		prev_lock_taken = region->rlock_taken;
 	}
 
-	omp_set_lock(prev_lock);
-	int prev_y = agent->getY();
+	const int prev_y = agent->getY();
+	const int prev_lock_idx = get_lock_idx(prev_y);
+	omp_set_lock(&prev_lock[prev_lock_idx]);
 	agent->setX(x);
 	agent->setY(y);
 	prev_lock_taken[prev_y] = false;
-	omp_unset_lock(prev_lock);
+	omp_unset_lock(&prev_lock[prev_lock_idx]);
 
 	return true;
 }
@@ -383,56 +408,59 @@ bool Ped::Model::try_migrate(struct region_s *region, Ped::Tagent *agent, int x,
 	// assume x == x_start - 1
 	struct region_s *adjacent_region = region + (x == region->x_start - 1 ? -1 : 1);
 
-	omp_lock_t *lock = &adjacent_region->rlock;
+	omp_lock_t *lock = adjacent_region->rlock;
 	bool *lock_taken = adjacent_region->rlock_taken;
 
-	omp_lock_t *prev_lock = &region->llock;
+	omp_lock_t *prev_lock = region->llock;
 	bool *prev_lock_taken = region->llock_taken;
 	if (x == region->x_end + 1) {
-		lock = &adjacent_region->llock;
+		lock = adjacent_region->llock;
 		lock_taken = adjacent_region->llock_taken;
 
-		prev_lock = &region->rlock;
+		prev_lock = region->rlock;
 		prev_lock_taken = region->rlock_taken;
 	}
 
 	bool success = false;
+	const int lock_idx = get_lock_idx(y);
+	const int prev_y = agent->getY();
+	const int prev_lock_idx = get_lock_idx(prev_y);
 try_again:
-	omp_set_lock(lock);
+	omp_set_lock(&lock[lock_idx]);
 	if (!lock_taken[y]) {
-		int acquired = omp_test_lock(prev_lock);
+		int acquired = omp_test_lock(&prev_lock[prev_lock_idx]);
 		if (!acquired) {
-			omp_unset_lock(lock);
+			omp_unset_lock(&lock[lock_idx]);
 			goto try_again;
 		}
-		int prev_y = agent->getY();
-
 		agent->setX(x);
 		agent->setY(y);
-
 		lock_taken[y] = true;
-		success = true;
 		prev_lock_taken[prev_y] = false;
-		omp_unset_lock(prev_lock);
+
+		success = true;
+		omp_unset_lock(&prev_lock[prev_lock_idx]);
 	}
-	omp_unset_lock(lock);
+	omp_unset_lock(&lock[lock_idx]);
 
 	return success;
 }
 
 void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent) {
 	// assume getX() == x_start
-	omp_lock_t *prev_lock = &region->llock;
+	omp_lock_t *prev_lock = region->llock;
 	bool *prev_lock_taken = region->llock_taken;
 	if (agent->getX() == region->x_end) {
-		prev_lock = &region->rlock;
+		prev_lock = region->rlock;
 		prev_lock_taken = region->rlock_taken;
 	}
 
-	omp_set_lock(prev_lock);
-	int prev_y = agent->getY();
+	const int prev_y = agent->getY();
+	const int prev_lock_idx = get_lock_idx(prev_y);
+
+	omp_set_lock(&prev_lock[prev_lock_idx]);
 	prev_lock_taken[prev_y] = false;
-	omp_unset_lock(prev_lock);
+	omp_unset_lock(&prev_lock[prev_lock_idx]);
 }
 
 bool Ped::Model::find_pair(std::vector<struct pair_s> taken_positions, struct pair_s pair) {
