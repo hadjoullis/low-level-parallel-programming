@@ -89,6 +89,9 @@ void Ped::Model::regions_init(void) {
 		regions[i].llock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
 		regions[i].rlock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
 
+		regions[i].region_agents.clear();
+		regions[i].taken_positions.clear();
+
 		for (auto *const agent : this->agents) {
 			const int x = agent->getX();
 			const int y = agent->getY();
@@ -331,8 +334,13 @@ bool Ped::Model::try_place_on_border(struct region_s *region, Ped::Tagent *agent
 	bool success = false;
 	omp_set_lock(lock);
 	if (!lock_taken[y]) {
+		int prev_x = agent->getX();
+		int prev_y = agent->getY();
 		agent->setX(x);
 		agent->setY(y);
+		if (prev_x == region->x_start || prev_x == region->x_end) {
+			lock_taken[prev_y] = false;
+		}
 
 		lock_taken[y] = true;
 		success = true;
