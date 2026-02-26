@@ -71,17 +71,22 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 }
 
 void Ped::Model::regions_init(void) {
-	int x_start = 0;
-	const int region_width = GRID_WIDTH / NUM_REGIONS;
-	// make x_end inclusive for easier logistics
-	for (size_t i = 0; i < NUM_REGIONS; i++) {
-		regions[i].x_start = x_start;
-		regions[i].x_end = x_start + region_width - 1;
-		if (i == NUM_REGIONS - 1) {
-			regions[i].x_end = GRID_WIDTH;
-		}
-		x_start += region_width;
+	regions.resize(MAX_NUM_REGIONS);
+	agents_buckets = (size_t *)calloc(GRID_WIDTH + 1, sizeof(size_t));
 
+	auto &agents = this->agents;
+	const int n = agents.size();
+	for (int i = 0; i < n; i++) {
+		auto *agent = agents[i];
+		if (agent->getX() < 0) {
+			agents_buckets[0]++;
+		} else if (agent->getX() > GRID_WIDTH) {
+			agents_buckets[GRID_WIDTH]++;
+		} else {
+			agents_buckets[agent->getX()]++;
+		}
+	}
+	for (size_t i = 0; i < MAX_NUM_REGIONS; i++) {
 		regions[i].llock = (omp_lock_t *)malloc(sizeof(omp_lock_t) * NUM_LOCKS);
 		regions[i].rlock = (omp_lock_t *)malloc(sizeof(omp_lock_t) * NUM_LOCKS);
 		for (size_t j = 0; j < NUM_LOCKS; j++) {
@@ -91,21 +96,12 @@ void Ped::Model::regions_init(void) {
 		// coordinates range is inclusive
 		regions[i].llock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
 		regions[i].rlock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
-
-		for (auto *const agent : this->agents) {
-			const int x = agent->getX();
-			const int y = agent->getY();
-			if (x == regions[i].x_start) {
-				regions[i].llock_taken[y] = true;
-			} else if (x == regions[i].x_end) {
-				regions[i].rlock_taken[y] = true;
-			}
-		}
 	}
 }
 
 void Ped::Model::regions_dinit(void) {
-	for (size_t i = 0; i < NUM_REGIONS; i++) {
+	free(agents_buckets);
+	for (size_t i = 0; i < MAX_NUM_REGIONS; i++) {
 		for (size_t j = 0; j < NUM_LOCKS; j++) {
 			omp_destroy_lock(&regions[i].llock[j]);
 			omp_destroy_lock(&regions[i].rlock[j]);
@@ -134,6 +130,34 @@ void Ped::Model::pthread_tick(const int k, int id) {
 		agent->setX(x);
 		agent->setY(y);
 	}
+}
+
+void Ped::Model::setup_regions(void) {
+	static const size_t IDEAL_LOAD = agents.size() / MAX_NUM_REGIONS;
+	static const size_t DIFF_TOLERANCE = IDEAL_LOAD / 10;
+	int x_start = 0, x_cur, cur_region = 0;
+	size_t agents_cnt = 0;
+	for (x_cur = 0; x_cur <= GRID_WIDTH; x_cur++) {
+		agents_cnt += agents_buckets[x_cur];
+		// We want minimum one column for llock, one for rlock and one buffer
+		// We also need to make sure that the last region has at least 3 columns
+		// This means that the last region, ALWAYS needs to be assigned after
+		// the loop
+		if (agents_cnt < IDEAL_LOAD + DIFF_TOLERANCE || x_cur - x_start < 2 || GRID_WIDTH - x_cur < 3 ||
+			cur_region == MAX_NUM_REGIONS - 1) {
+			continue;
+		}
+		// make x_end inclusive for easier logistics
+		regions[cur_region].x_start = x_start;
+		regions[cur_region].x_end = x_cur;
+
+		x_start = x_cur + 1;
+		agents_cnt = 0;
+		cur_region++;
+	}
+	regions[cur_region].x_start = x_start;
+	regions[cur_region].x_end = GRID_WIDTH;
+	CUR_NUM_REGIONS = cur_region + 1;
 }
 
 void Ped::Model::tick() {
@@ -175,21 +199,24 @@ void Ped::Model::tick() {
 		auto &agents = this->agents;
 		const int n = agents.size();
 
-#pragma omp parallel default(none) shared(n, agents)
+#pragma omp parallel default(none) shared(n, agents, regions)
 		{
+#pragma omp single nowait
+			{
+				setup_regions();
+			}
 #pragma omp for
 			for (int i = 0; i < n; i++) {
 				auto *agent = agents[i];
 				agent->computeNextDesiredPosition();
-			}
-
+			} // implicit barrier
 #pragma omp for
-			for (int i = 0; i < NUM_REGIONS; i++) {
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
 				get_agents_in_region(&regions[i]);
 			} // implicit barrier
 
 #pragma omp for
-			for (int i = 0; i < NUM_REGIONS; i++) {
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
 				const int size = regions[i].region_agents.size();
 				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
 					move_parallel(&regions[i], agent_idx);
@@ -310,18 +337,22 @@ void Ped::Model::move(Ped::Tagent *agent) {
 }
 
 void Ped::Model::get_agents_in_region(struct region_s *region) {
+	// since region might have changed we need to reset
+	memset(region->llock_taken, 0, (GRID_HEIGHT + 1) * sizeof(bool));
+	memset(region->rlock_taken, 0, (GRID_HEIGHT + 1) * sizeof(bool));
 	for (auto *const agent : this->agents) {
 		const int x = agent->getX();
 		const int y = agent->getY();
-		if (x >= region->x_start && x <= region->x_end) {
+		if ((x >= region->x_start && x <= region->x_end) || (region->x_start == 0 && x < 0) ||
+			(region->x_end == GRID_WIDTH && x > GRID_WIDTH)) {
 			region->region_agents.push_back(agent);
 			struct pair_s pair = {.x = x, .y = y};
 			region->taken_positions.push_back(pair);
-		}
-		if ((region->x_start == 0 && x < 0) || (region->x_end == GRID_WIDTH && x > GRID_WIDTH)) {
-			region->region_agents.push_back(agent);
-			struct pair_s pair = {.x = x, .y = y};
-			region->taken_positions.push_back(pair);
+			if (x == region->x_start) {
+				region->llock_taken[y] = true;
+			} else if (x == region->x_end) {
+				region->rlock_taken[y] = true;
+			}
 		}
 	}
 }
@@ -367,6 +398,19 @@ try_again:
 		agent->setX(x);
 		agent->setY(y);
 		lock_taken[y] = true;
+
+		if (prev_x >= 0 && prev_x <= GRID_WIDTH) {
+#pragma omp atomic update
+			agents_buckets[prev_x]--;
+#pragma omp atomic update
+			agents_buckets[x]++;
+		}
+		// agents outside borders will be handled by the same thread, regardless
+		// else {
+		// agents_buckets[BORDER]--;
+		// agents_buckets[BORDER]++;
+		// }
+
 		success = true;
 	}
 	omp_unset_lock(&lock[lock_idx]);
@@ -390,12 +434,18 @@ bool Ped::Model::try_migrate_outside_grid(struct region_s *region, Ped::Tagent *
 		prev_lock_taken = region->rlock_taken;
 	}
 
+	const int prev_x = agent->getX();
 	const int prev_y = agent->getY();
 	const int prev_lock_idx = get_lock_idx(prev_y);
 	omp_set_lock(&prev_lock[prev_lock_idx]);
 	agent->setX(x);
 	agent->setY(y);
 	prev_lock_taken[prev_y] = false;
+
+	// agents outside borders will be handled by the same thread, regardless
+	// agents_buckets[BORDER]--;
+	// agents_buckets[BORDER]++;
+
 	omp_unset_lock(&prev_lock[prev_lock_idx]);
 
 	return true;
@@ -423,6 +473,7 @@ bool Ped::Model::try_migrate(struct region_s *region, Ped::Tagent *agent, int x,
 
 	bool success = false;
 	const int lock_idx = get_lock_idx(y);
+	const int prev_x = agent->getX();
 	const int prev_y = agent->getY();
 	const int prev_lock_idx = get_lock_idx(prev_y);
 try_again:
@@ -438,6 +489,11 @@ try_again:
 		lock_taken[y] = true;
 		prev_lock_taken[prev_y] = false;
 
+#pragma omp atomic update
+		agents_buckets[prev_x]--;
+#pragma omp atomic update
+		agents_buckets[x]++;
+
 		success = true;
 		omp_unset_lock(&prev_lock[prev_lock_idx]);
 	}
@@ -446,7 +502,7 @@ try_again:
 	return success;
 }
 
-void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent) {
+void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
 	// assume getX() == x_start
 	omp_lock_t *prev_lock = region->llock;
 	bool *prev_lock_taken = region->llock_taken;
@@ -455,11 +511,18 @@ void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent) {
 		prev_lock_taken = region->rlock_taken;
 	}
 
+	const int prev_x = agent->getX();
 	const int prev_y = agent->getY();
 	const int prev_lock_idx = get_lock_idx(prev_y);
 
 	omp_set_lock(&prev_lock[prev_lock_idx]);
 	prev_lock_taken[prev_y] = false;
+	agent->setX(x);
+	agent->setY(y);
+#pragma omp atomic update
+	agents_buckets[prev_x]--;
+#pragma omp atomic update
+	agents_buckets[x]++;
 	omp_unset_lock(&prev_lock[prev_lock_idx]);
 }
 
@@ -477,7 +540,7 @@ void Ped::Model::move_parallel(struct region_s *region, int agent_idx) {
 	// Compute the three alternative positions that would bring the agent
 	// closer to his desiredPosition, starting with the desiredPosition itself
 	Ped::Tagent *agent = region->region_agents[agent_idx];
-	struct pair_s prioritizedAlternatives[NUM_ALTERNATIVES];
+	struct pair_s prioritizedAlternatives[NUM_ALTERNATIVES] = {0};
 	struct pair_s pDesired = {.x = agent->getDesiredX(), .y = agent->getDesiredY()};
 	size_t alternatives_cnt = 0;
 	prioritizedAlternatives[alternatives_cnt++] = pDesired;
@@ -515,10 +578,24 @@ void Ped::Model::move_parallel(struct region_s *region, int agent_idx) {
 			// If the current position is not yet taken by any neighbor
 			// Set the agent's position
 			if (agent->getX() == region->x_start || agent->getX() == region->x_end) {
-				leave_border(region, agent);
+				leave_border(region, agent, desired_x, desired_y);
+			} else {
+				const int prev_x = agent->getX();
+				agent->setX(desired_x);
+				agent->setY(desired_y);
+				// check prev_x or desired_x, no need to check both
+				if (prev_x >= 0 && prev_x <= GRID_WIDTH) {
+#pragma omp atomic update
+					agents_buckets[prev_x]--;
+#pragma omp atomic update
+					agents_buckets[desired_x]++;
+				}
+				// agents outside borders will be handled by the same thread, regardless
+				// else {
+				// agents_buckets[BORDER]--;
+				// agents_buckets[BORDER]++;
+				// }
 			}
-			agent->setX(desired_x);
-			agent->setY(desired_y);
 			success = true;
 		}
 
@@ -559,6 +636,11 @@ Ped::Model::~Model() {
 		printf("Cleaning up data structures for SIMD...\n");
 		simd_dinit(&agents_s);
 		printf("Data structures for SIMD released.\n");
+		break;
+	case Ped::OMP_MV:
+		printf("Cleaning up data structures for OMP_MV...\n");
+		regions_dinit();
+		printf("Data structures for OMP_MV released.\n");
 		break;
 #ifndef NOCUDA
 	case Ped::CUDA:

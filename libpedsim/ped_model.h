@@ -74,8 +74,9 @@ class Model {
 #define GRID_WIDTH 160
 #define GRID_HEIGHT 120
 #define NUM_LOCKS 4
-#define NUM_REGIONS 4
+#define MAX_NUM_REGIONS 8
 #define NUM_ALTERNATIVES 3
+	size_t CUR_NUM_REGIONS;
 	struct pair_s {
 		int x, y;
 	};
@@ -85,7 +86,9 @@ class Model {
 		bool *llock_taken, *rlock_taken;
 		std::vector<Tagent *> region_agents;
 		std::vector<struct pair_s> taken_positions;
-	} regions[NUM_REGIONS];
+	};
+	std::vector<struct region_s> regions;
+	size_t *agents_buckets;
 
 	// The waypoints in this scenario
 	std::vector<Twaypoint *> destinations;
@@ -98,8 +101,10 @@ class Model {
 	void regions_init(void);
 	void regions_dinit(void);
 	void move_parallel(struct region_s *region, int agent_idx);
+	void setup_regions(void);
+	void print_total_agents(void);
 	void get_agents_in_region(struct region_s *region);
-	void leave_border(struct region_s *region, Ped::Tagent *agent);
+	void leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool try_place_on_border(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool try_migrate(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool try_migrate_outside_grid(struct region_s *region, Ped::Tagent *agent, int x, int y);
