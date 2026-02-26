@@ -11,6 +11,7 @@
 #ifndef _ped_model_h_
 #define _ped_model_h_
 
+#include <atomic>
 #include <map>
 #include <set>
 #include <vector>
@@ -82,8 +83,7 @@ class Model {
 	};
 	struct region_s {
 		int x_start, x_end;
-		omp_lock_t *llock, *rlock;
-		bool *llock_taken, *rlock_taken;
+		std::vector<std::atomic<bool>> lborder, rborder;
 		std::vector<Tagent *> region_agents;
 		std::vector<struct pair_s> taken_positions;
 	};
@@ -109,7 +109,6 @@ class Model {
 	bool try_migrate(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool try_migrate_outside_grid(struct region_s *region, Ped::Tagent *agent, int x, int y);
 	bool find_pair(std::vector<struct pair_s> taken_positions, struct pair_s pair);
-	inline int get_lock_idx(int y);
 
 	////////////
 	/// Everything below here won't be relevant until Assignment 3

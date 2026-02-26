@@ -86,33 +86,19 @@ void Ped::Model::regions_init(void) {
 			agents_buckets[agent->getX()]++;
 		}
 	}
+	// coordinates range is inclusive
 	for (size_t i = 0; i < MAX_NUM_REGIONS; i++) {
-		regions[i].llock = (omp_lock_t *)malloc(sizeof(omp_lock_t) * NUM_LOCKS);
-		regions[i].rlock = (omp_lock_t *)malloc(sizeof(omp_lock_t) * NUM_LOCKS);
-		for (size_t j = 0; j < NUM_LOCKS; j++) {
-			omp_init_lock(&regions[i].llock[j]);
-			omp_init_lock(&regions[i].rlock[j]);
+		regions[i].lborder = std::vector<std::atomic<bool>>(GRID_HEIGHT + 1);
+		regions[i].rborder = std::vector<std::atomic<bool>>(GRID_HEIGHT + 1);
+
+		for (int y = 0; y <= GRID_HEIGHT; y++) {
+			regions[i].lborder[y].store(false, std::memory_order_relaxed);
+			regions[i].rborder[y].store(false, std::memory_order_relaxed);
 		}
-		// coordinates range is inclusive
-		regions[i].llock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
-		regions[i].rlock_taken = (bool *)calloc(GRID_HEIGHT + 1, sizeof(bool));
 	}
 }
 
-void Ped::Model::regions_dinit(void) {
-	free(agents_buckets);
-	for (size_t i = 0; i < MAX_NUM_REGIONS; i++) {
-		for (size_t j = 0; j < NUM_LOCKS; j++) {
-			omp_destroy_lock(&regions[i].llock[j]);
-			omp_destroy_lock(&regions[i].rlock[j]);
-		}
-		free(regions[i].llock);
-		free(regions[i].rlock);
-
-		free(regions[i].llock_taken);
-		free(regions[i].rlock_taken);
-	}
-}
+void Ped::Model::regions_dinit(void) { free(agents_buckets); }
 
 void Ped::Model::pthread_tick(const int k, int id) {
 	auto &agents = this->agents;
@@ -139,7 +125,7 @@ void Ped::Model::setup_regions(void) {
 	size_t agents_cnt = 0;
 	for (x_cur = 0; x_cur <= GRID_WIDTH; x_cur++) {
 		agents_cnt += agents_buckets[x_cur];
-		// We want minimum one column for llock, one for rlock and one buffer
+		// We want minimum one column for lborder, one for rborder and one buffer
 		// We also need to make sure that the last region has at least 3 columns
 		// This means that the last region, ALWAYS needs to be assigned after
 		// the loop
@@ -214,7 +200,6 @@ void Ped::Model::tick() {
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
 				get_agents_in_region(&regions[i]);
 			} // implicit barrier
-
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
 				const int size = regions[i].region_agents.size();
@@ -338,8 +323,10 @@ void Ped::Model::move(Ped::Tagent *agent) {
 
 void Ped::Model::get_agents_in_region(struct region_s *region) {
 	// since region might have changed we need to reset
-	memset(region->llock_taken, 0, (GRID_HEIGHT + 1) * sizeof(bool));
-	memset(region->rlock_taken, 0, (GRID_HEIGHT + 1) * sizeof(bool));
+	for (int y = 0; y <= GRID_HEIGHT; y++) {
+		region->lborder[y].store(false, std::memory_order_relaxed);
+		region->rborder[y].store(false, std::memory_order_relaxed);
+	}
 	for (auto *const agent : this->agents) {
 		const int x = agent->getX();
 		const int y = agent->getY();
@@ -349,104 +336,69 @@ void Ped::Model::get_agents_in_region(struct region_s *region) {
 			struct pair_s pair = {.x = x, .y = y};
 			region->taken_positions.push_back(pair);
 			if (x == region->x_start) {
-				region->llock_taken[y] = true;
+				region->lborder[y].store(true, std::memory_order_relaxed);
 			} else if (x == region->x_end) {
-				region->rlock_taken[y] = true;
+				region->rborder[y].store(true, std::memory_order_relaxed);
 			}
 		}
 	}
-}
-
-inline int Ped::Model::get_lock_idx(int y) {
-	static const int CHUNK = GRID_HEIGHT / NUM_LOCKS;
-	if (y >= GRID_HEIGHT) {
-		return NUM_LOCKS - 1;
-	}
-	return y / CHUNK;
 }
 
 bool Ped::Model::try_place_on_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
-	// assume x == x_start
-	omp_lock_t *lock = region->llock;
-	bool *lock_taken = region->llock_taken;
-	if (x == region->x_end) {
-		lock = region->rlock;
-		lock_taken = region->rlock_taken;
+	std::vector<std::atomic<bool>> *border;
+	if (x == region->x_start) {
+		border = &region->lborder;
+	} else { // if (x == region->x_end)
+		border = &region->rborder;
 	}
-	const int lock_idx = get_lock_idx(y);
+	const bool taken = (*border)[y].load(std::memory_order_acquire);
+	bool expected = false;
+	if (taken || !(*border)[y].compare_exchange_strong(expected, true, std::memory_order_release)) {
+		return false;
+	}
 
-	bool success = false;
 	const int prev_x = agent->getX();
 	const int prev_y = agent->getY();
-	const int prev_lock_idx = get_lock_idx(prev_y);
-try_again:
-	omp_set_lock(&lock[lock_idx]);
-	if (!lock_taken[y]) {
-		if (prev_x == region->x_start || prev_x == region->x_end) {
-			if (lock_idx == prev_lock_idx) {
-				lock_taken[prev_y] = false;
-			} else {
-				const int acquired = omp_test_lock(&lock[prev_lock_idx]);
-				if (!acquired) {
-					omp_unset_lock(&lock[lock_idx]);
-					goto try_again;
-				}
-				lock_taken[prev_y] = false;
-				omp_unset_lock(&lock[prev_lock_idx]);
-			}
-		}
-		agent->setX(x);
-		agent->setY(y);
-		lock_taken[y] = true;
-
-		if (prev_x >= 0 && prev_x <= GRID_WIDTH) {
-#pragma omp atomic update
-			agents_buckets[prev_x]--;
-#pragma omp atomic update
-			agents_buckets[x]++;
-		}
-		// agents outside borders will be handled by the same thread, regardless
-		// else {
-		// agents_buckets[BORDER]--;
-		// agents_buckets[BORDER]++;
-		// }
-
-		success = true;
+	if (prev_x == region->x_start || prev_x == region->x_end) {
+		(*border)[prev_y].store(false, std::memory_order_release);
 	}
-	omp_unset_lock(&lock[lock_idx]);
+	agent->setX(x);
+	agent->setY(y);
 
-	return success;
+	// agents outside borders will be handled by the same thread, regardless
+	if (prev_x >= 0 && prev_x <= GRID_WIDTH) {
+#pragma omp atomic update
+		agents_buckets[prev_x]--;
+#pragma omp atomic update
+		agents_buckets[x]++;
+	}
+
+	return true;
 }
 
 bool Ped::Model::try_migrate_outside_grid(struct region_s *region, Ped::Tagent *agent, int x, int y) {
-	// since the same region is responsible for agents out of the
-	// grid, no need to lock
+	// since the same region is responsible for agents out of the grid, no need
+	// to care about data races
 	struct pair_s pair = {.x = x, .y = y};
 	if (find_pair(region->taken_positions, pair)) {
 		return false;
 	}
 
-	// assume x < 0
-	omp_lock_t *prev_lock = region->llock;
-	bool *prev_lock_taken = region->llock_taken;
-	if (x > region->x_end) {
-		prev_lock = region->rlock;
-		prev_lock_taken = region->rlock_taken;
+	std::vector<std::atomic<bool>> *prev_border;
+	if (x < 0) {
+		prev_border = &region->lborder;
+	} else { // if (x > GRID_WIDTH)
+		prev_border = &region->rborder;
 	}
 
 	const int prev_x = agent->getX();
 	const int prev_y = agent->getY();
-	const int prev_lock_idx = get_lock_idx(prev_y);
-	omp_set_lock(&prev_lock[prev_lock_idx]);
 	agent->setX(x);
 	agent->setY(y);
-	prev_lock_taken[prev_y] = false;
-
+	(*prev_border)[prev_y].store(false, std::memory_order_release);
 	// agents outside borders will be handled by the same thread, regardless
 	// agents_buckets[BORDER]--;
 	// agents_buckets[BORDER]++;
-
-	omp_unset_lock(&prev_lock[prev_lock_idx]);
 
 	return true;
 }
@@ -455,75 +407,58 @@ bool Ped::Model::try_migrate(struct region_s *region, Ped::Tagent *agent, int x,
 	if (x < 0 || x > GRID_WIDTH) {
 		return try_migrate_outside_grid(region, agent, x, y);
 	}
-	// assume x == x_start - 1
-	struct region_s *adjacent_region = region + (x == region->x_start - 1 ? -1 : 1);
-
-	omp_lock_t *lock = adjacent_region->rlock;
-	bool *lock_taken = adjacent_region->rlock_taken;
-
-	omp_lock_t *prev_lock = region->llock;
-	bool *prev_lock_taken = region->llock_taken;
-	if (x == region->x_end + 1) {
-		lock = adjacent_region->llock;
-		lock_taken = adjacent_region->llock_taken;
-
-		prev_lock = region->rlock;
-		prev_lock_taken = region->rlock_taken;
+	struct region_s *adjacent_region;
+	std::vector<std::atomic<bool>> *border;
+	std::vector<std::atomic<bool>> *prev_border;
+	if (x == region->x_start - 1) {
+		adjacent_region = region - 1;
+		border = &adjacent_region->rborder;
+		prev_border = &region->lborder;
+	} else { // if (x == region->x_end + 1)
+		adjacent_region = region + 1;
+		border = &adjacent_region->lborder;
+		prev_border = &region->rborder;
+	}
+	const bool taken = (*border)[y].load(std::memory_order_acquire);
+	bool expected = false;
+	if (taken || !(*border)[y].compare_exchange_strong(expected, true, std::memory_order_release)) {
+		return false;
 	}
 
-	bool success = false;
-	const int lock_idx = get_lock_idx(y);
 	const int prev_x = agent->getX();
 	const int prev_y = agent->getY();
-	const int prev_lock_idx = get_lock_idx(prev_y);
-try_again:
-	omp_set_lock(&lock[lock_idx]);
-	if (!lock_taken[y]) {
-		int acquired = omp_test_lock(&prev_lock[prev_lock_idx]);
-		if (!acquired) {
-			omp_unset_lock(&lock[lock_idx]);
-			goto try_again;
-		}
-		agent->setX(x);
-		agent->setY(y);
-		lock_taken[y] = true;
-		prev_lock_taken[prev_y] = false;
+
+	(*prev_border)[prev_y].store(false, std::memory_order_release);
+
+	agent->setX(x);
+	agent->setY(y);
 
 #pragma omp atomic update
-		agents_buckets[prev_x]--;
+	agents_buckets[prev_x]--;
 #pragma omp atomic update
-		agents_buckets[x]++;
+	agents_buckets[x]++;
 
-		success = true;
-		omp_unset_lock(&prev_lock[prev_lock_idx]);
-	}
-	omp_unset_lock(&lock[lock_idx]);
-
-	return success;
+	return true;
 }
 
 void Ped::Model::leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y) {
-	// assume getX() == x_start
-	omp_lock_t *prev_lock = region->llock;
-	bool *prev_lock_taken = region->llock_taken;
-	if (agent->getX() == region->x_end) {
-		prev_lock = region->rlock;
-		prev_lock_taken = region->rlock_taken;
+	std::vector<std::atomic<bool>> *prev_border;
+	if (agent->getX() == region->x_start) {
+		prev_border = &region->lborder;
+	} else { // if (agent->getX() == region->x_end)
+		prev_border = &region->rborder;
 	}
 
 	const int prev_x = agent->getX();
 	const int prev_y = agent->getY();
-	const int prev_lock_idx = get_lock_idx(prev_y);
 
-	omp_set_lock(&prev_lock[prev_lock_idx]);
-	prev_lock_taken[prev_y] = false;
+	(*prev_border)[prev_y].store(false, std::memory_order_release);
 	agent->setX(x);
 	agent->setY(y);
 #pragma omp atomic update
 	agents_buckets[prev_x]--;
 #pragma omp atomic update
 	agents_buckets[x]++;
-	omp_unset_lock(&prev_lock[prev_lock_idx]);
 }
 
 bool Ped::Model::find_pair(std::vector<struct pair_s> taken_positions, struct pair_s pair) {
@@ -584,17 +519,13 @@ void Ped::Model::move_parallel(struct region_s *region, int agent_idx) {
 				agent->setX(desired_x);
 				agent->setY(desired_y);
 				// check prev_x or desired_x, no need to check both
+				// agents outside borders will be handled by the same thread, regardless
 				if (prev_x >= 0 && prev_x <= GRID_WIDTH) {
 #pragma omp atomic update
 					agents_buckets[prev_x]--;
 #pragma omp atomic update
 					agents_buckets[desired_x]++;
 				}
-				// agents outside borders will be handled by the same thread, regardless
-				// else {
-				// agents_buckets[BORDER]--;
-				// agents_buckets[BORDER]++;
-				// }
 			}
 			success = true;
 		}
