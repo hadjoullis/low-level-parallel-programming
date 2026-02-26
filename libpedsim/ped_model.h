@@ -74,8 +74,7 @@ class Model {
 	struct agents agents_d;
 #define GRID_WIDTH 160
 #define GRID_HEIGHT 120
-#define NUM_LOCKS 4
-#define MAX_NUM_REGIONS 8
+#define MAX_NUM_REGIONS 16
 #define NUM_ALTERNATIVES 3
 	size_t CUR_NUM_REGIONS;
 	struct pair_s {

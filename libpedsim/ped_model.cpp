@@ -120,7 +120,7 @@ void Ped::Model::pthread_tick(const int k, int id) {
 
 void Ped::Model::setup_regions(void) {
 	static const size_t IDEAL_LOAD = agents.size() / MAX_NUM_REGIONS;
-	static const size_t DIFF_TOLERANCE = IDEAL_LOAD / 10;
+	static const size_t DIFF_TOLERANCE = IDEAL_LOAD / 4;
 	int x_start = 0, x_cur, cur_region = 0;
 	size_t agents_cnt = 0;
 	for (x_cur = 0; x_cur <= GRID_WIDTH; x_cur++) {
