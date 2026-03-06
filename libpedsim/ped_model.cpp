@@ -166,6 +166,14 @@ void Ped::Model::tick() {
 		}
 		break;
 	}
+	case Ped::SEQ_MV_HM: {
+		for (auto *const agent : this->agents) {
+			agent->computeNextDesiredPosition();
+			move(agent);
+		}
+		updateHeatmapSeq();
+		break;
+	}
 	case Ped::OMP: {
 		auto &agents = this->agents;
 		const int n = agents.size();

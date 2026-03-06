@@ -77,6 +77,7 @@ int main(int argc, char*argv[]) {
             {"pthread", no_argument, NULL, 'p'},
             {"seq", no_argument, NULL, 'q'},
             {"seq-mv", no_argument, NULL, '?'},
+            {"seq-mv-hm", no_argument, NULL, ']'},
             {0, 0, 0, 0}  // End of options
         };
 
@@ -145,6 +146,11 @@ int main(int argc, char*argv[]) {
                 // Handle --seq-mv
                 std::cout << "Option --seq-mv activated\n";
                 implementation_to_test = Ped::SEQ_MV;
+                break;
+            case ']':
+                // Handle --seq-mv-hm
+                std::cout << "Option --seq-mv-hm activated\n";
+                implementation_to_test = Ped::SEQ_MV_HM;
                 break;
             case 'm':
                 // Handle --max-steps with a numerical argument
