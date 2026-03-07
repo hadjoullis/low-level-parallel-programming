@@ -20,6 +20,7 @@
 
 #include "ped_agent.h"
 #include "ped_simd_agents.h"
+#include "ped_move_parallel.h"
 
 #ifndef NOCUDA
 #include "ped_cuda_agent.cuh"
@@ -72,22 +73,7 @@ class Model {
 	std::vector<Tagent *> agents;
 	struct agents agents_s;
 	struct agents agents_d;
-#define GRID_WIDTH 160
-#define GRID_HEIGHT 120
-#define MAX_NUM_REGIONS 16
-#define NUM_ALTERNATIVES 3
-	size_t CUR_NUM_REGIONS;
-	struct pair_s {
-		int x, y;
-	};
-	struct region_s {
-		int x_start, x_end;
-		std::vector<std::atomic<bool>> lborder, rborder;
-		std::vector<Tagent *> region_agents;
-		std::vector<struct pair_s> taken_positions;
-	};
 	std::vector<struct region_s> regions;
-	size_t *agents_buckets;
 
 	// The waypoints in this scenario
 	std::vector<Twaypoint *> destinations;
@@ -96,18 +82,6 @@ class Model {
 
 	// Moves an agent towards its next position
 	void move(Ped::Tagent *agent);
-
-	void regions_init(void);
-	void regions_dinit(void);
-	void move_parallel(struct region_s *region, int agent_idx);
-	void setup_regions(void);
-	void print_total_agents(void);
-	void get_agents_in_region(struct region_s *region);
-	void leave_border(struct region_s *region, Ped::Tagent *agent, int x, int y);
-	bool try_place_on_border(struct region_s *region, Ped::Tagent *agent, int x, int y);
-	bool try_migrate(struct region_s *region, Ped::Tagent *agent, int x, int y);
-	bool try_migrate_outside_grid(struct region_s *region, Ped::Tagent *agent, int x, int y);
-	bool find_pair(std::vector<struct pair_s> taken_positions, struct pair_s pair);
 
 	////////////
 	/// Everything below here won't be relevant until Assignment 3
