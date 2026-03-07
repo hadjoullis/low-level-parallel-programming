@@ -39,15 +39,17 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 	this->implementation = implementation;
 	this->timing_mode = timing_mode;
 
-	// Set up heatmap (relevant for Assignment 4)
-	setupHeatmapSeq();
-
 	switch (implementation) {
 	case Ped::VECTOR:
 		printf("Setting up data structures for SIMD...\n");
 		agents_s = {0};
 		simd_init(agents, &agents_s);
 		printf("Data structures set up for SIMD complete.\n");
+		break;
+	case Ped::SEQ_MV_HM:
+		printf("Setting up data structures for SEQ_MV_HM...\n");
+		setupHeatmapSeq();
+		printf("Data structures set up for SEQ_MV_HM complete.\n");
 		break;
 	case Ped::OMP_MV:
 		printf("Setting up data structures for OMP_MV...\n");
@@ -300,6 +302,11 @@ Ped::Model::~Model() {
 		printf("Cleaning up data structures for SIMD...\n");
 		simd_dinit(&agents_s);
 		printf("Data structures for SIMD released.\n");
+		break;
+	case Ped::SEQ_MV_HM:
+		printf("Cleaning up data structures for SEQ_MV_HM...\n");
+		freeHeatmapSeq();
+		printf("Data structures for SEQ_MV_HM released.\n");
 		break;
 	case Ped::OMP_MV:
 		printf("Cleaning up data structures for OMP_MV...\n");

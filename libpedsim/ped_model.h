@@ -109,6 +109,7 @@ class Model {
 
 	void setupHeatmapSeq();
 	void updateHeatmapSeq();
+	void freeHeatmapSeq();
 };
 } // namespace Ped
 #endif

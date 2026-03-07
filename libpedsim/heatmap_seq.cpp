@@ -35,6 +35,16 @@ void Ped::Model::setupHeatmapSeq()
 	}
 }
 
+void Ped::Model::freeHeatmapSeq()
+{
+	free(heatmap[0]);
+	free(scaled_heatmap[0]);
+	free(blurred_heatmap[0]);
+	free(heatmap);
+	free(scaled_heatmap);
+	free(blurred_heatmap);
+}
+
 // Updates the heatmap according to the agent positions
 void Ped::Model::updateHeatmapSeq()
 {
