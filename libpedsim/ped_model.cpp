@@ -56,6 +56,12 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		mv_parallel_regions_init(regions, agents);
 		printf("Data structures set up for OMP_MV complete.\n");
 		break;
+	case Ped::OMP_MV_HM:
+		printf("Setting up data structures for OMP_MV_HM...\n");
+		setupHeatmapSeq();
+		mv_parallel_regions_init(regions, agents);
+		printf("Data structures set up for OMP_MV_HM complete.\n");
+		break;
 #ifndef NOCUDA
 	case Ped::CUDA:
 		printf("Setting up data structures for cuda...\n");
@@ -147,6 +153,42 @@ void Ped::Model::tick() {
 				auto *agent = agents[i];
 				agent->computeNextDesiredPosition();
 			} // implicit barrier
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				mv_parallel_get_agents_in_region(agents, &regions[i]);
+			} // implicit barrier
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				const int size = regions[i].region_agents.size();
+				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
+					move_parallel(&regions[i], agent_idx);
+				}
+				regions[i].region_agents.clear();
+				regions[i].taken_positions.clear();
+			}
+		}
+		break;
+	}
+	case Ped::OMP_MV_HM: {
+		auto &agents = this->agents;
+		const int n = agents.size();
+		int CUR_NUM_REGIONS;
+
+#pragma omp parallel default(none) shared(n, agents, CUR_NUM_REGIONS, regions)
+		{
+#pragma omp single nowait
+			{
+				CUR_NUM_REGIONS = mv_parallel_setup_regions(regions, agents);
+			}
+#pragma omp for
+			for (int i = 0; i < n; i++) {
+				auto *agent = agents[i];
+				agent->computeNextDesiredPosition();
+			} // implicit barrier
+#pragma omp single nowait
+			{
+				updateHeatmapSeq();
+			}
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
 				mv_parallel_get_agents_in_region(agents, &regions[i]);
@@ -312,6 +354,12 @@ Ped::Model::~Model() {
 		printf("Cleaning up data structures for OMP_MV...\n");
 		mv_parallel_regions_dinit();
 		printf("Data structures for OMP_MV released.\n");
+		break;
+	case Ped::OMP_MV_HM:
+		printf("Cleaning up data structures for OMP_MV_HM...\n");
+		freeHeatmapSeq();
+		mv_parallel_regions_dinit();
+		printf("Data structures for OMP_MV_HM released.\n");
 		break;
 #ifndef NOCUDA
 	case Ped::CUDA:

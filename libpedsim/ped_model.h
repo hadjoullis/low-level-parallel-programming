@@ -19,8 +19,8 @@
 #include <omp.h>
 
 #include "ped_agent.h"
-#include "ped_simd_agents.h"
 #include "ped_move_parallel.h"
+#include "ped_simd_agents.h"
 
 #ifndef NOCUDA
 #include "ped_cuda_agent.cuh"
@@ -31,7 +31,7 @@ class Tagent;
 
 // The implementation modes for Assignment 1 + 2:
 // chooses which implementation to use for tick()
-enum IMPLEMENTATION { CUDA, VECTOR, OMP, PTHREAD, SEQ, SEQ_MV, SEQ_MV_HM, OMP_MV };
+enum IMPLEMENTATION { CUDA, VECTOR, OMP, PTHREAD, SEQ, SEQ_MV, SEQ_MV_HM, OMP_MV, OMP_MV_HM };
 
 class Model {
   public:
