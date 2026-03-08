@@ -79,24 +79,15 @@ __global__ void insert_heat(int **heatmap, struct pair_s *pairs, int agents_size
 	atomicAdd(&heatmap[y][x], 40);
 }
 
-__global__ void cap_heat(int **heatmap) {
+__global__ void cap_scale_heat(int **heatmap, int **scaled_heatmap) {
 	const int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const int y = threadIdx.y + blockIdx.y * blockDim.y;
 	if (x >= SIZE || y >= SIZE) {
 		return;
 	}
-	const int heat = heatmap[y][x] < 255 ? heatmap[y][x] : 255;
-	heatmap[y][x] = heat;
-}
-
-__global__ void scale_heat(int **heatmap, int **scaled_heatmap) {
-	const int x = threadIdx.x + blockIdx.x * blockDim.x;
-	const int y = threadIdx.y + blockIdx.y * blockDim.y;
-	if (x >= SIZE || y >= SIZE) {
-		return;
-	}
+	const int value = heatmap[y][x] < 255 ? heatmap[y][x] : 255;
+	heatmap[y][x] = value;
 	// Scale the data for visual representation
-	const int value = heatmap[y][x];
 	for (int cellY = 0; cellY < CELLSIZE; cellY++) {
 		for (int cellX = 0; cellX < CELLSIZE; cellX++) {
 			scaled_heatmap[y * CELLSIZE + cellY][x * CELLSIZE + cellX] = value;
@@ -137,15 +128,11 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
 	insert_heat<<<pairs_blocks, pairs_threads_per_block>>>(hmcu->heatmap, hmcu->pairs_d, hmcu->size);
 	cudaDeviceSynchronize();
 
-	cap_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
-	cudaDeviceSynchronize();
-
-	scale_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap, hmcu->scaled_heatmap);
+	cap_scale_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap, hmcu->scaled_heatmap);
 	cudaDeviceSynchronize();
 
 	static dim3 scaled_blocks(((SCALED_SIZE + threads_per_block.x - 1) / threads_per_block.x),
 							  ((SCALED_SIZE + threads_per_block.y - 1) / threads_per_block.y),
 							  1);
 	blur_heat<<<scaled_blocks, threads_per_block>>>(hmcu->scaled_heatmap, hmcu->blurred_heatmap);
-	cudaDeviceSynchronize();
 }

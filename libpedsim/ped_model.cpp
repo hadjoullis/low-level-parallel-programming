@@ -236,6 +236,7 @@ void Ped::Model::tick() {
 				regions[i].taken_positions.clear();
 			}
 		}
+		cudaDeviceSynchronize();
 		break;
 	}
 	case Ped::CUDA: {
