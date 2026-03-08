@@ -56,13 +56,13 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		mv_parallel_regions_init(regions, agents);
 		printf("Data structures set up for OMP_MV complete.\n");
 		break;
+#ifndef NOCUDA
 	case Ped::OMP_MV_HM:
 		printf("Setting up data structures for OMP_MV_HM...\n");
-		setupHeatmapSeq();
+		hmcu_init(&hmcu, agents.size());
 		mv_parallel_regions_init(regions, agents);
 		printf("Data structures set up for OMP_MV_HM complete.\n");
 		break;
-#ifndef NOCUDA
 	case Ped::CUDA:
 		printf("Setting up data structures for cuda...\n");
 		agents_s = {0};
@@ -169,42 +169,6 @@ void Ped::Model::tick() {
 		}
 		break;
 	}
-	case Ped::OMP_MV_HM: {
-		auto &agents = this->agents;
-		const int n = agents.size();
-		int CUR_NUM_REGIONS;
-
-#pragma omp parallel default(none) shared(n, agents, CUR_NUM_REGIONS, regions)
-		{
-#pragma omp single nowait
-			{
-				CUR_NUM_REGIONS = mv_parallel_setup_regions(regions, agents);
-			}
-#pragma omp for
-			for (int i = 0; i < n; i++) {
-				auto *agent = agents[i];
-				agent->computeNextDesiredPosition();
-			} // implicit barrier
-#pragma omp single nowait
-			{
-				updateHeatmapSeq();
-			}
-#pragma omp for
-			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
-				mv_parallel_get_agents_in_region(agents, &regions[i]);
-			} // implicit barrier
-#pragma omp for
-			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
-				const int size = regions[i].region_agents.size();
-				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
-					move_parallel(&regions[i], agent_idx);
-				}
-				regions[i].region_agents.clear();
-				regions[i].taken_positions.clear();
-			}
-		}
-		break;
-	}
 	case Ped::PTHREAD: {
 		static bool once = true;
 		static int PTHREAD_NUM_THREADS = 8;
@@ -235,6 +199,58 @@ void Ped::Model::tick() {
 		break;
 	}
 #ifndef NOCUDA
+	case Ped::OMP_MV_HM: {
+		auto &agents = this->agents;
+		const int n = agents.size();
+		int CUR_NUM_REGIONS;
+
+#pragma omp parallel default(none) shared(n, agents, CUR_NUM_REGIONS, regions)
+		{
+#pragma omp single nowait
+			{
+				CUR_NUM_REGIONS = mv_parallel_setup_regions(regions, agents);
+			}
+#pragma omp for
+			for (int i = 0; i < n; i++) {
+				auto *agent = agents[i];
+				agent->computeNextDesiredPosition();
+				hmcu.pairs_h[i].x = agent->getDesiredX();
+				hmcu.pairs_h[i].y = agent->getDesiredY();
+			} // implicit barrier
+#pragma omp single nowait
+			{
+				static dim3 threads_per_block(16, 16, 1);
+				static dim3 blocks(
+					((SIZE + SHARED_SIZE - 1) / SHARED_SIZE), ((SIZE + SHARED_SIZE - 1) / SHARED_SIZE), 1);
+				static const size_t bytes = n * sizeof(struct pair_s);
+				static const size_t shared_bytes = SHARED_SIZE * SHARED_SIZE * sizeof(int);
+				cudaMemcpy(hmcu.pairs_d, hmcu.pairs_h, bytes, cudaMemcpyHostToDevice);
+				hmcu_update_heatmap(blocks, threads_per_block, shared_bytes, &hmcu);
+				cudaDeviceSynchronize();
+				hmcu_scale(blocks, threads_per_block, shared_bytes, &hmcu);
+				cudaDeviceSynchronize();
+				static dim3 scaled_blocks(
+					((SCALED_SIZE + SCALED_SHARED_SIZE - 1) / SCALED_SHARED_SIZE), ((SCALED_SIZE + SCALED_SHARED_SIZE - 1) / SCALED_SHARED_SIZE), 1);
+				static const size_t scaled_shared_bytes = SCALED_SHARED_SIZE * SCALED_SHARED_SIZE * sizeof(int);
+				hmcu_blur(scaled_blocks, threads_per_block, scaled_shared_bytes, &hmcu);
+				cudaDeviceSynchronize();
+			}
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				mv_parallel_get_agents_in_region(agents, &regions[i]);
+			} // implicit barrier
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				const int size = regions[i].region_agents.size();
+				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
+					move_parallel(&regions[i], agent_idx);
+				}
+				regions[i].region_agents.clear();
+				regions[i].taken_positions.clear();
+			}
+		}
+		break;
+	}
 	case Ped::CUDA: {
 		static dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
 		static dim3 blocks(((agents_s.size + threads_per_block.x - 1) / threads_per_block.x), 1, 1);
@@ -355,13 +371,13 @@ Ped::Model::~Model() {
 		mv_parallel_regions_dinit();
 		printf("Data structures for OMP_MV released.\n");
 		break;
+#ifndef NOCUDA
 	case Ped::OMP_MV_HM:
 		printf("Cleaning up data structures for OMP_MV_HM...\n");
-		freeHeatmapSeq();
+		hmcu_dinit(&hmcu);
 		mv_parallel_regions_dinit();
 		printf("Data structures for OMP_MV_HM released.\n");
 		break;
-#ifndef NOCUDA
 	case Ped::CUDA:
 		printf("Cleaning up data structures for cuda...\n");
 		cuda_dinit(&agents_s);

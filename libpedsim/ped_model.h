@@ -23,6 +23,7 @@
 #include "ped_simd_agents.h"
 
 #ifndef NOCUDA
+#include "heatmap_cuda.cuh"
 #include "ped_cuda_agent.cuh"
 #endif
 
@@ -74,6 +75,7 @@ class Model {
 	struct agents agents_s;
 	struct agents agents_d;
 	std::vector<struct region_s> regions;
+	struct hmcu_s hmcu;
 
 	// The waypoints in this scenario
 	std::vector<Twaypoint *> destinations;
@@ -96,7 +98,7 @@ class Model {
 
 #define SIZE 1024
 #define CELLSIZE 5
-#define SCALED_SIZE SIZE *CELLSIZE
+#define SCALED_SIZE (SIZE * CELLSIZE)
 
 	// The heatmap representing the density of agents
 	int **heatmap;
