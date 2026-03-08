@@ -76,7 +76,7 @@ __global__ void insert_heat(int **heatmap, struct pair_s *pairs, int agents_size
 	if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) {
 		return;
 	}
-	atomicAdd(&heatmap[x][y], 40);
+	atomicAdd(&heatmap[y][x], 40);
 }
 
 __global__ void cap_heat(int **heatmap) {
