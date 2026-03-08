@@ -201,6 +201,7 @@ void Ped::Model::tick() {
 	}
 #ifndef NOCUDA
 	case Ped::OMP_MV_HM: {
+		// printf("START\n");
 		auto &agents = this->agents;
 		const int n = agents.size();
 		int CUR_NUM_REGIONS;
@@ -228,6 +229,7 @@ void Ped::Model::tick() {
 			} // implicit barrier
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				// printf("MOVING AGENTS\n");
 				const int size = regions[i].region_agents.size();
 				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
 					move_parallel(&regions[i], agent_idx);
@@ -237,6 +239,7 @@ void Ped::Model::tick() {
 			}
 		}
 		cudaDeviceSynchronize();
+		// printf("END\n");
 		break;
 	}
 	case Ped::CUDA: {

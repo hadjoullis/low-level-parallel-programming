@@ -3,6 +3,7 @@
 // Implements the heatmap functionality.
 //
 #include "heatmap_cuda.cuh"
+// #include <stdio.h>
 
 __constant__ int w[5][5]; // Weights for blur filter
 
@@ -107,6 +108,9 @@ __global__ void blur_heat(int **scaled_heatmap, int **blurred_heatmap) {
 	// DO NOT use blockDim.[xy] to avoid gaps in grid
 	const int tx = threadIdx.x, x = threadIdx.x - HALO + blockIdx.x * THREADS_X;
 	const int ty = threadIdx.y, y = threadIdx.y - HALO + blockIdx.y * THREADS_Y;
+	// if (x == 0 && y == 0) {
+	// 	printf("BLURRING HEATMAP!\n");
+	// }
 #define WEIGHTSUM 273
 	// Apply gaussian blurfilter
 	if (x >= 0 && x < SCALED_SIZE && y >= 0 && y < SCALED_SIZE) {
@@ -134,18 +138,15 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
 	static dim3 size_blocks(((SIZE + threads_per_block.x - 1) / threads_per_block.x),
 							((SIZE + threads_per_block.y - 1) / threads_per_block.y),
 							1);
-	cudaMemcpy(hmcu->pairs_d, hmcu->pairs_h, hmcu->size * sizeof(struct pair_s), cudaMemcpyHostToDevice);
 	fade_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
-	cudaDeviceSynchronize();
 
+	cudaMemcpy(hmcu->pairs_d, hmcu->pairs_h, hmcu->size * sizeof(struct pair_s), cudaMemcpyHostToDevice);
 	static dim3 pairs_threads_per_block(PAIRS_THREADS, 1, 1);
 	static dim3 pairs_blocks(
 		((hmcu->size + pairs_threads_per_block.x - 1) / pairs_threads_per_block.x), 1, 1);
 	insert_heat<<<pairs_blocks, pairs_threads_per_block>>>(hmcu->heatmap, hmcu->pairs_d, hmcu->size);
-	cudaDeviceSynchronize();
 
 	cap_scale_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap, hmcu->scaled_heatmap);
-	cudaDeviceSynchronize();
 
 	// hack!
 	// spawn more threads to load global mem into shared easily
