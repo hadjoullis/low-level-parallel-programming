@@ -238,6 +238,7 @@ void Ped::Model::tick() {
 				regions[i].taken_positions.clear();
 			}
 		}
+		// printf("MOVED ALL AGENTS!\n");
 		cudaDeviceSynchronize();
 		// printf("END\n");
 		break;
