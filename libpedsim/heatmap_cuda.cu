@@ -128,7 +128,7 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
 	static dim3 size_blocks(((SIZE + threads_per_block.x - 1) / threads_per_block.x),
 							((SIZE + threads_per_block.y - 1) / threads_per_block.y),
 							1);
-	cudaMemcpy(hmcu->pairs_d, hmcu->pairs_h, hmcu->size * sizeof(struct pair_s), cudaMemcpyDeviceToHost);
+	cudaMemcpy(hmcu->pairs_d, hmcu->pairs_h, hmcu->size * sizeof(struct pair_s), cudaMemcpyHostToDevice);
 	fade_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
 	cudaDeviceSynchronize();
 
