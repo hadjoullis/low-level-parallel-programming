@@ -5,6 +5,10 @@
 #define CELLSIZE 5
 #define SCALED_SIZE (SIZE * CELLSIZE)
 
+#define THREADS_X 16
+#define THREADS_Y 16
+#define PAIRS_THREADS 512
+
 #include "ped_move_parallel.h"
 
 #include <cuda_runtime.h>

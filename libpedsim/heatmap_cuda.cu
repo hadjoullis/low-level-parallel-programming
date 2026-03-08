@@ -95,27 +95,42 @@ __global__ void cap_scale_heat(int **heatmap, int **scaled_heatmap) {
 	}
 }
 
+#define HALO 2
+#define SHM_X (THREADS_X + 2 * HALO)
+#define SHM_Y (THREADS_Y + 2 * HALO)
+
+// hack!
+// spawn more threads to load global mem into shared easily
+// excess workers do nothing
 __global__ void blur_heat(int **scaled_heatmap, int **blurred_heatmap) {
-	const int x = threadIdx.x + blockIdx.x * blockDim.x;
-	const int y = threadIdx.y + blockIdx.y * blockDim.y;
+	__shared__ int shm[SHM_Y][SHM_X];
+	// DO NOT use blockDim.[xy] to avoid gaps in grid
+	const int tx = threadIdx.x, x = threadIdx.x - HALO + blockIdx.x * THREADS_X;
+	const int ty = threadIdx.y, y = threadIdx.y - HALO + blockIdx.y * THREADS_Y;
 #define WEIGHTSUM 273
 	// Apply gaussian blurfilter
-	if (x < 2 || x >= SCALED_SIZE - 2 || y < 2 || y >= SCALED_SIZE - 2) {
-		return;
+	if (x >= 0 && x < SCALED_SIZE && y >= 0 && y < SCALED_SIZE) {
+		shm[ty][tx] = scaled_heatmap[y][x];
 	}
-	int sum = 0;
-	for (int k = -2; k < 3; k++) {
-		for (int l = -2; l < 3; l++) {
-			sum += w[2 + k][2 + l] * scaled_heatmap[y + k][x + l];
+	__syncthreads();
+
+	// first we need to check if we are an 'excess' worker
+	if (tx >= HALO && tx < THREADS_X + HALO && ty >= HALO && ty < THREADS_Y + HALO) {
+		if (x >= 2 && x < SCALED_SIZE - 2 && y >= 2 && y < SCALED_SIZE - 2) {
+			int sum = 0;
+			for (int k = -2; k < 3; k++) {
+				for (int l = -2; l < 3; l++) {
+					sum += w[2 + k][2 + l] * shm[ty + k][tx + l];
+				}
+			}
+			int value = sum / WEIGHTSUM;
+			blurred_heatmap[y][x] = 0x00FF0000 | value << 24;
 		}
 	}
-	int value = sum / WEIGHTSUM;
-	__syncthreads();
-	blurred_heatmap[y][x] = 0x00FF0000 | value << 24;
 }
 
 __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
-	static dim3 threads_per_block(16, 16, 1);
+	static dim3 threads_per_block(THREADS_X, THREADS_Y, 1);
 	static dim3 size_blocks(((SIZE + threads_per_block.x - 1) / threads_per_block.x),
 							((SIZE + threads_per_block.y - 1) / threads_per_block.y),
 							1);
@@ -123,16 +138,21 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
 	fade_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
 	cudaDeviceSynchronize();
 
-	static dim3 pairs_threads_per_block(512, 1, 1);
-	static dim3 pairs_blocks(((hmcu->size + threads_per_block.x - 1) / threads_per_block.x), 1, 1);
+	static dim3 pairs_threads_per_block(PAIRS_THREADS, 1, 1);
+	static dim3 pairs_blocks(
+		((hmcu->size + pairs_threads_per_block.x - 1) / pairs_threads_per_block.x), 1, 1);
 	insert_heat<<<pairs_blocks, pairs_threads_per_block>>>(hmcu->heatmap, hmcu->pairs_d, hmcu->size);
 	cudaDeviceSynchronize();
 
 	cap_scale_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap, hmcu->scaled_heatmap);
 	cudaDeviceSynchronize();
 
+	// hack!
+	// spawn more threads to load global mem into shared easily
+	// excess workers do nothing
+	static dim3 halo_threads_per_block(SHM_X, SHM_Y, 1);
 	static dim3 scaled_blocks(((SCALED_SIZE + threads_per_block.x - 1) / threads_per_block.x),
 							  ((SCALED_SIZE + threads_per_block.y - 1) / threads_per_block.y),
 							  1);
-	blur_heat<<<scaled_blocks, threads_per_block>>>(hmcu->scaled_heatmap, hmcu->blurred_heatmap);
+	blur_heat<<<scaled_blocks, halo_threads_per_block>>>(hmcu->scaled_heatmap, hmcu->blurred_heatmap);
 }
