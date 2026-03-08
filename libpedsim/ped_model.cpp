@@ -60,6 +60,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 	case Ped::OMP_MV_HM:
 		printf("Setting up data structures for OMP_MV_HM...\n");
 		hmcu_init(&hmcu, agents.size());
+		blurred_heatmap = hmcu.blurred_heatmap;
 		mv_parallel_regions_init(regions, agents);
 		printf("Data structures set up for OMP_MV_HM complete.\n");
 		break;
@@ -219,21 +220,7 @@ void Ped::Model::tick() {
 			} // implicit barrier
 #pragma omp single nowait
 			{
-				static dim3 threads_per_block(16, 16, 1);
-				static dim3 blocks(
-					((SIZE + SHARED_SIZE - 1) / SHARED_SIZE), ((SIZE + SHARED_SIZE - 1) / SHARED_SIZE), 1);
-				static const size_t bytes = n * sizeof(struct pair_s);
-				static const size_t shared_bytes = SHARED_SIZE * SHARED_SIZE * sizeof(int);
-				cudaMemcpy(hmcu.pairs_d, hmcu.pairs_h, bytes, cudaMemcpyHostToDevice);
-				hmcu_update_heatmap(blocks, threads_per_block, shared_bytes, &hmcu);
-				cudaDeviceSynchronize();
-				hmcu_scale(blocks, threads_per_block, shared_bytes, &hmcu);
-				cudaDeviceSynchronize();
-				static dim3 scaled_blocks(
-					((SCALED_SIZE + SCALED_SHARED_SIZE - 1) / SCALED_SHARED_SIZE), ((SCALED_SIZE + SCALED_SHARED_SIZE - 1) / SCALED_SHARED_SIZE), 1);
-				static const size_t scaled_shared_bytes = SCALED_SHARED_SIZE * SCALED_SHARED_SIZE * sizeof(int);
-				hmcu_blur(scaled_blocks, threads_per_block, scaled_shared_bytes, &hmcu);
-				cudaDeviceSynchronize();
+				hmcu_update_heatmap(&hmcu);
 			}
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
