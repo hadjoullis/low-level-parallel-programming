@@ -10,9 +10,11 @@ __constant__ int w[5][5]; // Weights for blur filter
 // Sets up the heatmap
 __host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size) {
 	// only blurred needs to (also) be on host
-	struct pair_s *pairs_h, *pairs_d;
-	cudaMallocHost(&pairs_h, sizeof(struct pair_s) * agents_size);
-	cudaMalloc(&pairs_d, sizeof(struct pair_s) * agents_size);
+	struct pairs_s pairs_h, pairs_d;
+	cudaMallocHost(&pairs_h.x, sizeof(int) * agents_size);
+	cudaMallocHost(&pairs_h.y, sizeof(int) * agents_size);
+	cudaMalloc(&pairs_d.x, sizeof(int) * agents_size);
+	cudaMalloc(&pairs_d.y, sizeof(int) * agents_size);
 
 	int *hm, *shm, *bhm;
 	cudaMalloc(&hm, SIZE * SIZE * sizeof(int));
@@ -54,7 +56,8 @@ __host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size) {
 }
 
 __host__ void hmcu_dinit(struct hmcu_s *hmcu) {
-	(void)hmcu;
+	cudaFreeHost(hmcu->pairs_h.x);
+	cudaFreeHost(hmcu->pairs_h.y);
 	cudaDeviceReset();
 }
 
@@ -67,13 +70,13 @@ __global__ void fade_heat(int **heatmap) {
 	heatmap[y][x] = (int)round(heatmap[y][x] * 0.80);
 }
 
-__global__ void insert_heat(int **heatmap, struct pair_s *pairs, int agents_size) {
+__global__ void insert_heat(int **heatmap, int *xs, int *ys, int agents_size) {
 	const int idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (idx >= agents_size) {
 		return;
 	}
-	const int x = pairs[idx].x;
-	const int y = pairs[idx].y;
+	const int x = xs[idx];
+	const int y = ys[idx];
 	if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) {
 		return;
 	}
@@ -140,11 +143,13 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
 							1);
 	fade_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
 
-	cudaMemcpy(hmcu->pairs_d, hmcu->pairs_h, hmcu->size * sizeof(struct pair_s), cudaMemcpyHostToDevice);
+	cudaMemcpy(hmcu->pairs_d.x, hmcu->pairs_h.x, hmcu->size * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(hmcu->pairs_d.y, hmcu->pairs_h.y, hmcu->size * sizeof(int), cudaMemcpyHostToDevice);
 	static dim3 pairs_threads_per_block(PAIRS_THREADS, 1, 1);
 	static dim3 pairs_blocks(
 		((hmcu->size + pairs_threads_per_block.x - 1) / pairs_threads_per_block.x), 1, 1);
-	insert_heat<<<pairs_blocks, pairs_threads_per_block>>>(hmcu->heatmap, hmcu->pairs_d, hmcu->size);
+	insert_heat<<<pairs_blocks, pairs_threads_per_block>>>(
+		hmcu->heatmap, hmcu->pairs_d.x, hmcu->pairs_d.y, hmcu->size);
 
 	cap_scale_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap, hmcu->scaled_heatmap);
 

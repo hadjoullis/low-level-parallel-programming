@@ -216,8 +216,8 @@ void Ped::Model::tick() {
 			for (int i = 0; i < n; i++) {
 				auto *agent = agents[i];
 				agent->computeNextDesiredPosition();
-				hmcu.pairs_h[i].x = agent->getDesiredX();
-				hmcu.pairs_h[i].y = agent->getDesiredY();
+				hmcu.pairs_h.x[i] = agent->getDesiredX();
+				hmcu.pairs_h.y[i] = agent->getDesiredY();
 			} // implicit barrier
 #pragma omp single nowait
 			{

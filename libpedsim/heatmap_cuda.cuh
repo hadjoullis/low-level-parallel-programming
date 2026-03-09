@@ -9,14 +9,16 @@
 #define THREADS_Y 16
 #define PAIRS_THREADS 512
 
-#include "ped_move_parallel.h"
-
 #include <cuda_runtime.h>
 #include <stdlib.h>
 
+struct pairs_s {
+	int *x, *y;
+};
+
 struct hmcu_s {
 	int **heatmap, **scaled_heatmap, **blurred_heatmap;
-	struct pair_s *pairs_h, *pairs_d;
+	struct pairs_s pairs_h, pairs_d;
 	int size;
 };
 
