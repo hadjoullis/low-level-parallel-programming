@@ -22,8 +22,14 @@ struct hmcu_s {
 	int size;
 };
 
-__host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size);
+struct hmcu_time_s {
+	cudaEvent_t sfade, sinsert, scap_scale, eblur;
+	cudaEvent_t efade, einsert, ecap_scale, sblur;
+	float fade, insert, cap_scale, blur;
+};
+
+__host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size, struct hmcu_time_s *time);
 __host__ void hmcu_dinit(struct hmcu_s *hmcu);
-__host__ void hmcu_update_heatmap(struct hmcu_s *hmcu);
+__host__ void hmcu_update_heatmap(struct hmcu_s *hmcu, struct hmcu_time_s *time);
 
 #endif

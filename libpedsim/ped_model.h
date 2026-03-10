@@ -76,6 +76,7 @@ class Model {
 	struct agents agents_d;
 	std::vector<struct region_s> regions;
 	struct hmcu_s hmcu;
+	struct hmcu_time_s hmcu_time;
 	double total_hm_time;
 	size_t ticks_cnt;
 

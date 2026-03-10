@@ -69,7 +69,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		printf("Setting up data structures for OMP_MV_HM...\n");
 		total_hm_time = 0;
 		ticks_cnt = 0;
-		hmcu_init(&hmcu, agents.size());
+		hmcu_init(&hmcu, agents.size(), &hmcu_time);
 		blurred_heatmap = hmcu.blurred_heatmap;
 		mv_parallel_regions_init(regions, agents);
 		printf("Data structures set up for OMP_MV_HM complete.\n");
@@ -273,7 +273,7 @@ void Ped::Model::tick() {
 #pragma omp single nowait
 			{
 				start = omp_get_wtime();
-				hmcu_update_heatmap(&hmcu);
+				hmcu_update_heatmap(&hmcu, &hmcu_time);
 			}
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
@@ -295,6 +295,17 @@ void Ped::Model::tick() {
 		const double end = omp_get_wtime();
 		total_hm_time += end - start; // seconds
 		ticks_cnt++;
+
+		cudaEventSynchronize(hmcu_time.eblur);
+		float elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.sfade, hmcu_time.efade);
+		hmcu_time.fade += elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.sinsert, hmcu_time.einsert);
+		hmcu_time.insert += elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.scap_scale, hmcu_time.ecap_scale);
+		hmcu_time.cap_scale += elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.sblur, hmcu_time.eblur);
+		hmcu_time.blur += elapsedTime;
 		// printf("END\n");
 		break;
 	}
@@ -430,6 +441,14 @@ Ped::Model::~Model() {
 	case Ped::OMP_MV_HM:
 		printf("HM_CUDA_TOTAL_TIME: %.6lf seconds\n", total_hm_time);
 		printf("HM_CUDA_AVG_TIME: %.6lf seconds\n", total_hm_time / ticks_cnt);
+		printf("HM_CUDA_FADE_TOTAL_TIME: %.6lf seconds\n", hmcu_time.fade);
+		printf("HM_CUDA_FADE_AVG_TIME: %.6lf seconds\n", hmcu_time.fade / ticks_cnt);
+		printf("HM_CUDA_INSERT_TOTAL_TIME: %.6lf seconds\n", hmcu_time.insert);
+		printf("HM_CUDA_INSERT_AVG_TIME: %.6lf seconds\n", hmcu_time.insert / ticks_cnt);
+		printf("HM_CUDA_CAP_SCALE_TOTAL_TIME: %.6lf seconds\n", hmcu_time.cap_scale);
+		printf("HM_CUDA_CAP_SCALE_AVG_TIME: %.6lf seconds\n", hmcu_time.cap_scale / ticks_cnt);
+		printf("HM_CUDA_BLUR_TOTAL_TIME: %.6lf seconds\n", hmcu_time.blur);
+		printf("HM_CUDA_BLUR_AVG_TIME: %.6lf seconds\n", hmcu_time.blur / ticks_cnt);
 		printf("Cleaning up data structures for OMP_MV_HM...\n");
 		hmcu_dinit(&hmcu);
 		mv_parallel_regions_dinit();

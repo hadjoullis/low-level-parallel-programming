@@ -8,7 +8,7 @@
 __constant__ int w[5][5]; // Weights for blur filter
 
 // Sets up the heatmap
-__host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size) {
+__host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size, struct hmcu_time_s *time) {
 	// only blurred needs to (also) be on host
 	struct pairs_s pairs_h, pairs_d;
 	cudaMallocHost(&pairs_h.x, sizeof(int) * agents_size);
@@ -53,6 +53,11 @@ __host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size) {
 	hmcu->pairs_d = pairs_d;
 	hmcu->size = agents_size;
 	cudaMemcpyToSymbol(w, h_w, sizeof(w));
+
+	time->fade = 0;
+	time->insert = 0;
+	time->cap_scale = 0;
+	time->blur = 0;
 }
 
 __host__ void hmcu_dinit(struct hmcu_s *hmcu) {
@@ -136,13 +141,16 @@ __global__ void blur_heat(int **scaled_heatmap, int **blurred_heatmap) {
 	}
 }
 
-__host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
+__host__ void hmcu_update_heatmap(struct hmcu_s *hmcu, struct hmcu_time_s *time) {
 	static dim3 threads_per_block(THREADS_X, THREADS_Y, 1);
 	static dim3 size_blocks(((SIZE + threads_per_block.x - 1) / threads_per_block.x),
 							((SIZE + threads_per_block.y - 1) / threads_per_block.y),
 							1);
+	cudaEventRecord(time->sfade, 0);
 	fade_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
+	cudaEventRecord(time->efade, 0);
 
+	cudaEventRecord(time->sinsert, 0);
 	cudaMemcpy(hmcu->pairs_d.x, hmcu->pairs_h.x, hmcu->size * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(hmcu->pairs_d.y, hmcu->pairs_h.y, hmcu->size * sizeof(int), cudaMemcpyHostToDevice);
 	static dim3 pairs_threads_per_block(PAIRS_THREADS, 1, 1);
@@ -150,8 +158,11 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
 		((hmcu->size + pairs_threads_per_block.x - 1) / pairs_threads_per_block.x), 1, 1);
 	insert_heat<<<pairs_blocks, pairs_threads_per_block>>>(
 		hmcu->heatmap, hmcu->pairs_d.x, hmcu->pairs_d.y, hmcu->size);
+	cudaEventRecord(time->einsert, 0);
 
+	cudaEventRecord(time->scap_scale, 0);
 	cap_scale_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap, hmcu->scaled_heatmap);
+	cudaEventRecord(time->ecap_scale, 0);
 
 	// hack!
 	// spawn more threads to load global mem into shared easily
@@ -160,5 +171,7 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu) {
 	static dim3 scaled_blocks(((SCALED_SIZE + threads_per_block.x - 1) / threads_per_block.x),
 							  ((SCALED_SIZE + threads_per_block.y - 1) / threads_per_block.y),
 							  1);
+	cudaEventRecord(time->sblur, 0);
 	blur_heat<<<scaled_blocks, halo_threads_per_block>>>(hmcu->scaled_heatmap, hmcu->blurred_heatmap);
+	cudaEventRecord(time->eblur, 0);
 }
