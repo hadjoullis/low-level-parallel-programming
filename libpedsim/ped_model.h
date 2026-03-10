@@ -32,7 +32,7 @@ class Tagent;
 
 // The implementation modes for Assignment 1 + 2:
 // chooses which implementation to use for tick()
-enum IMPLEMENTATION { CUDA, VECTOR, OMP, PTHREAD, SEQ, SEQ_MV, SEQ_MV_HM, OMP_MV, OMP_MV_HM };
+enum IMPLEMENTATION { CUDA, VECTOR, OMP, PTHREAD, SEQ, SEQ_MV, SEQ_MV_HM, OMP_MV, OMP_MV_HM, OMP_MV_HM_SEQ };
 
 class Model {
   public:
@@ -76,6 +76,8 @@ class Model {
 	struct agents agents_d;
 	std::vector<struct region_s> regions;
 	struct hmcu_s hmcu;
+	double total_hm_time;
+	size_t ticks_cnt;
 
 	// The waypoints in this scenario
 	std::vector<Twaypoint *> destinations;

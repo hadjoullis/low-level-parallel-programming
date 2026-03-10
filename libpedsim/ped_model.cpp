@@ -56,6 +56,14 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		mv_parallel_regions_init(regions, agents);
 		printf("Data structures set up for OMP_MV complete.\n");
 		break;
+	case Ped::OMP_MV_HM_SEQ:
+		printf("Setting up data structures for OMP_MV_HM_SEQ...\n");
+		total_hm_time = 0;
+		ticks_cnt = 0;
+		setupHeatmapSeq();
+		mv_parallel_regions_init(regions, agents);
+		printf("Data structures set up for OMP_MV_HM_SEQ complete.\n");
+		break;
 #ifndef NOCUDA
 	case Ped::OMP_MV_HM:
 		printf("Setting up data structures for OMP_MV_HM...\n");
@@ -154,6 +162,46 @@ void Ped::Model::tick() {
 				auto *agent = agents[i];
 				agent->computeNextDesiredPosition();
 			} // implicit barrier
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				mv_parallel_get_agents_in_region(agents, &regions[i]);
+			} // implicit barrier
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				const int size = regions[i].region_agents.size();
+				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
+					move_parallel(&regions[i], agent_idx);
+				}
+				regions[i].region_agents.clear();
+				regions[i].taken_positions.clear();
+			}
+		}
+		break;
+	}
+	case Ped::OMP_MV_HM_SEQ: {
+		auto &agents = this->agents;
+		const int n = agents.size();
+		int CUR_NUM_REGIONS;
+
+#pragma omp parallel default(none) shared(n, agents, CUR_NUM_REGIONS, regions, total_hm_time, ticks_cnt)
+		{
+#pragma omp single nowait
+			{
+				CUR_NUM_REGIONS = mv_parallel_setup_regions(regions, agents);
+			}
+#pragma omp for
+			for (int i = 0; i < n; i++) {
+				auto *agent = agents[i];
+				agent->computeNextDesiredPosition();
+			} // implicit barrier
+#pragma omp single nowait
+			{
+				const double start = omp_get_wtime();
+				updateHeatmapSeq();
+				const double end = omp_get_wtime();
+				total_hm_time += end - start; // seconds
+				ticks_cnt++;
+			}
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
 				mv_parallel_get_agents_in_region(agents, &regions[i]);
@@ -362,6 +410,14 @@ Ped::Model::~Model() {
 		printf("Cleaning up data structures for OMP_MV...\n");
 		mv_parallel_regions_dinit();
 		printf("Data structures for OMP_MV released.\n");
+		break;
+	case Ped::OMP_MV_HM_SEQ:
+		printf("HM_SEQ_TOTAL_TIME: %.6lf seconds\n", total_hm_time);
+		printf("HM_SEQ_AVG_TIME: %.6lf seconds\n", total_hm_time / ticks_cnt);
+		printf("Cleaning up data structures for OMP_MV_HM_SEQ...\n");
+		freeHeatmapSeq();
+		mv_parallel_regions_dinit();
+		printf("Data structures for OMP_MV_HM_SEQ released.\n");
 		break;
 #ifndef NOCUDA
 	case Ped::OMP_MV_HM:
