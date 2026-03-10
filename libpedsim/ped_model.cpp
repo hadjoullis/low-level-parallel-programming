@@ -439,6 +439,11 @@ Ped::Model::~Model() {
 		break;
 #ifndef NOCUDA
 	case Ped::OMP_MV_HM:
+		// from ms to seconds
+		hmcu_time.fade /= 1000;
+		hmcu_time.insert /= 1000;
+		hmcu_time.cap_scale /= 1000;
+		hmcu_time.blur /= 1000;
 		printf("HM_CUDA_TOTAL_TIME: %.6lf seconds\n", total_hm_time);
 		printf("HM_CUDA_AVG_TIME: %.6lf seconds\n", total_hm_time / ticks_cnt);
 		printf("HM_CUDA_FADE_TOTAL_TIME: %.6lf seconds\n", hmcu_time.fade);
