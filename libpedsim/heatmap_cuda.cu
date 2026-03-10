@@ -166,12 +166,12 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu, struct hmcu_time_s *time)
 	fade_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
 	cudaEventRecord(time->efade, 0);
 
-	cudaEventRecord(time->sinsert, 0);
 	cudaMemcpy(hmcu->pairs_d.x, hmcu->pairs_h.x, hmcu->size * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(hmcu->pairs_d.y, hmcu->pairs_h.y, hmcu->size * sizeof(int), cudaMemcpyHostToDevice);
 	static dim3 pairs_threads_per_block(PAIRS_THREADS, 1, 1);
 	static dim3 pairs_blocks(
 		((hmcu->size + pairs_threads_per_block.x - 1) / pairs_threads_per_block.x), 1, 1);
+	cudaEventRecord(time->sinsert, 0);
 	insert_heat<<<pairs_blocks, pairs_threads_per_block>>>(
 		hmcu->heatmap, hmcu->pairs_d.x, hmcu->pairs_d.y, hmcu->size);
 	cudaEventRecord(time->einsert, 0);
