@@ -450,7 +450,7 @@ Ped::Model::~Model() {
 		printf("HM_CUDA_BLUR_TOTAL_TIME: %.6lf seconds\n", hmcu_time.blur);
 		printf("HM_CUDA_BLUR_AVG_TIME: %.6lf seconds\n", hmcu_time.blur / ticks_cnt);
 		printf("Cleaning up data structures for OMP_MV_HM...\n");
-		hmcu_dinit(&hmcu);
+		hmcu_dinit(&hmcu, &hmcu_time);
 		mv_parallel_regions_dinit();
 		printf("Data structures for OMP_MV_HM released.\n");
 		break;

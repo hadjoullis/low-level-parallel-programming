@@ -54,13 +54,29 @@ __host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size, struct hmcu_time_s
 	hmcu->size = agents_size;
 	cudaMemcpyToSymbol(w, h_w, sizeof(w));
 
+	cudaEventCreate(&time->sfade);
+	cudaEventCreate(&time->efade);
+	cudaEventCreate(&time->sinsert);
+	cudaEventCreate(&time->einsert);
+	cudaEventCreate(&time->scap_scale);
+	cudaEventCreate(&time->ecap_scale);
+	cudaEventCreate(&time->sblur);
+	cudaEventCreate(&time->eblur);
 	time->fade = 0;
 	time->insert = 0;
 	time->cap_scale = 0;
 	time->blur = 0;
 }
 
-__host__ void hmcu_dinit(struct hmcu_s *hmcu) {
+__host__ void hmcu_dinit(struct hmcu_s *hmcu, struct hmcu_time_s *time) {
+	cudaEventDestroy(time->sfade);
+	cudaEventDestroy(time->efade);
+	cudaEventDestroy(time->sinsert);
+	cudaEventDestroy(time->einsert);
+	cudaEventDestroy(time->scap_scale);
+	cudaEventDestroy(time->ecap_scale);
+	cudaEventDestroy(time->sblur);
+	cudaEventDestroy(time->eblur);
 	cudaFreeHost(hmcu->pairs_h.x);
 	cudaFreeHost(hmcu->pairs_h.y);
 	cudaDeviceReset();
