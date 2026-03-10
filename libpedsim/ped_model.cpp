@@ -67,6 +67,8 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 #ifndef NOCUDA
 	case Ped::OMP_MV_HM:
 		printf("Setting up data structures for OMP_MV_HM...\n");
+		total_hm_time = 0;
+		ticks_cnt = 0;
 		hmcu_init(&hmcu, agents.size());
 		blurred_heatmap = hmcu.blurred_heatmap;
 		mv_parallel_regions_init(regions, agents);
@@ -253,8 +255,9 @@ void Ped::Model::tick() {
 		auto &agents = this->agents;
 		const int n = agents.size();
 		int CUR_NUM_REGIONS;
+		double start;
 
-#pragma omp parallel default(none) shared(n, agents, CUR_NUM_REGIONS, regions)
+#pragma omp parallel default(none) shared(n, agents, CUR_NUM_REGIONS, regions, start)
 		{
 #pragma omp single nowait
 			{
@@ -269,6 +272,7 @@ void Ped::Model::tick() {
 			} // implicit barrier
 #pragma omp single nowait
 			{
+				start = omp_get_wtime();
 				hmcu_update_heatmap(&hmcu);
 			}
 #pragma omp for
@@ -288,6 +292,9 @@ void Ped::Model::tick() {
 		}
 		// printf("MOVED ALL AGENTS!\n");
 		cudaDeviceSynchronize();
+		const double end = omp_get_wtime();
+		total_hm_time += end - start; // seconds
+		ticks_cnt++;
 		// printf("END\n");
 		break;
 	}
@@ -421,6 +428,8 @@ Ped::Model::~Model() {
 		break;
 #ifndef NOCUDA
 	case Ped::OMP_MV_HM:
+		printf("HM_CUDA_TOTAL_TIME: %.6lf seconds\n", total_hm_time);
+		printf("HM_CUDA_AVG_TIME: %.6lf seconds\n", total_hm_time / ticks_cnt);
 		printf("Cleaning up data structures for OMP_MV_HM...\n");
 		hmcu_dinit(&hmcu);
 		mv_parallel_regions_dinit();
