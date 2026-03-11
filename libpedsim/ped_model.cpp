@@ -74,6 +74,16 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		mv_parallel_regions_init(regions, agents);
 		printf("Data structures set up for OMP_MV_HM complete.\n");
 		break;
+	case Ped::OMP_MV_HM_BN:
+		printf("Setting up data structures for OMP_MV_HM_BN...\n");
+		total_hm_time = 0;
+		ticks_cnt = 0;
+		dscu_init(agents, &dscu_agents_h, &dscu_agents_d);
+		hmcu_init(&hmcu, agents.size(), &hmcu_time);
+		blurred_heatmap = hmcu.blurred_heatmap;
+		mv_parallel_struct_regions_init(regions_bn, dscu_agents_h.size, dscu_agents_h.x);
+		printf("Data structures set up for OMP_MV_HM_BN complete.\n");
+		break;
 	case Ped::CUDA:
 		printf("Setting up data structures for cuda...\n");
 		agents_s = {0};
@@ -309,6 +319,74 @@ void Ped::Model::tick() {
 		// printf("END\n");
 		break;
 	}
+	case Ped::OMP_MV_HM_BN: {
+		// printf("START\n");
+		int CUR_NUM_REGIONS;
+		double start;
+
+#pragma omp parallel default(none) shared(dscu_agents_h, dscu_agents_d, CUR_NUM_REGIONS, regions_bn, start)
+		{
+#pragma omp single nowait
+			{
+				CUR_NUM_REGIONS = mv_parallel_struct_setup_regions(regions_bn, dscu_agents_h.size);
+			}
+#pragma omp single nowait
+			{
+				cudaMemcpy(dscu_agents_d.x,
+						   dscu_agents_h.x,
+						   dscu_agents_h.size * sizeof(int),
+						   cudaMemcpyHostToDevice);
+				cudaMemcpy(dscu_agents_d.y,
+						   dscu_agents_h.y,
+						   dscu_agents_h.size * sizeof(int),
+						   cudaMemcpyHostToDevice);
+				dscu_compute_next_desired_position(&dscu_agents_d);
+				cudaMemcpy(dscu_agents_d.des_x,
+						   dscu_agents_h.des_x,
+						   dscu_agents_h.size * sizeof(int),
+						   cudaMemcpyDeviceToHost);
+				cudaMemcpy(dscu_agents_d.des_y,
+						   dscu_agents_h.des_y,
+						   dscu_agents_h.size * sizeof(int),
+						   cudaMemcpyDeviceToHost);
+				start = omp_get_wtime();
+				hmcu_update_heatmap_bn(
+					&hmcu, dscu_agents_h.size, dscu_agents_d.des_x, dscu_agents_d.des_y, &hmcu_time);
+			}
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				mv_parallel_struct_get_agents_in_region(&dscu_agents_h, &regions_bn[i]);
+			} // implicit barrier
+#pragma omp for
+			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
+				// printf("MOVING AGENTS\n");
+				const int size = regions_bn[i].region_agents.size();
+				for (int agent_idx = 0; agent_idx < size; agent_idx++) {
+					move_parallel_struct(&regions_bn[i], &dscu_agents_h, agent_idx);
+				}
+				regions_bn[i].region_agents.clear();
+				regions_bn[i].taken_positions.clear();
+			}
+		}
+		// printf("MOVED ALL AGENTS!\n");
+		cudaDeviceSynchronize();
+		const double end = omp_get_wtime();
+		total_hm_time += end - start; // seconds
+		ticks_cnt++;
+
+		cudaEventSynchronize(hmcu_time.eblur);
+		float elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.sfade, hmcu_time.efade);
+		hmcu_time.fade += elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.sinsert, hmcu_time.einsert);
+		hmcu_time.insert += elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.scap_scale, hmcu_time.ecap_scale);
+		hmcu_time.cap_scale += elapsedTime;
+		cudaEventElapsedTime(&elapsedTime, hmcu_time.sblur, hmcu_time.eblur);
+		hmcu_time.blur += elapsedTime;
+		// printf("END\n");
+		break;
+	}
 	case Ped::CUDA: {
 		static dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
 		static dim3 blocks(((agents_s.size + threads_per_block.x - 1) / threads_per_block.x), 1, 1);
@@ -458,6 +536,27 @@ Ped::Model::~Model() {
 		hmcu_dinit(&hmcu, &hmcu_time);
 		mv_parallel_regions_dinit();
 		printf("Data structures for OMP_MV_HM released.\n");
+		break;
+	case Ped::OMP_MV_HM_BN:
+		hmcu_time.fade /= 1000;
+		hmcu_time.insert /= 1000;
+		hmcu_time.cap_scale /= 1000;
+		hmcu_time.blur /= 1000;
+		printf("HM_BN_CUDA_TOTAL_TIME: %.6lf seconds\n", total_hm_time);
+		printf("HM_BN_CUDA_AVG_TIME: %.6lf seconds\n", total_hm_time / ticks_cnt);
+		printf("HM_BN_CUDA_FADE_TOTAL_TIME: %.6lf seconds\n", hmcu_time.fade);
+		printf("HM_BN_CUDA_FADE_AVG_TIME: %.6lf seconds\n", hmcu_time.fade / ticks_cnt);
+		printf("HM_BN_CUDA_INSERT_TOTAL_TIME: %.6lf seconds\n", hmcu_time.insert);
+		printf("HM_BN_CUDA_INSERT_AVG_TIME: %.6lf seconds\n", hmcu_time.insert / ticks_cnt);
+		printf("HM_BN_CUDA_CAP_SCALE_TOTAL_TIME: %.6lf seconds\n", hmcu_time.cap_scale);
+		printf("HM_BN_CUDA_CAP_SCALE_AVG_TIME: %.6lf seconds\n", hmcu_time.cap_scale / ticks_cnt);
+		printf("HM_BN_CUDA_BLUR_TOTAL_TIME: %.6lf seconds\n", hmcu_time.blur);
+		printf("HM_BN_CUDA_BLUR_AVG_TIME: %.6lf seconds\n", hmcu_time.blur / ticks_cnt);
+		printf("Setting up data structures for OMP_MV_HM_BN...\n");
+		dscu_dinit(&dscu_agents_h);
+		hmcu_dinit(&hmcu, &hmcu_time);
+		mv_parallel_struct_regions_dinit();
+		printf("Data structures set up for OMP_MV_HM_BN complete.\n");
 		break;
 	case Ped::CUDA:
 		printf("Cleaning up data structures for cuda...\n");

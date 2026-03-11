@@ -24,7 +24,9 @@
 
 #ifndef NOCUDA
 #include "heatmap_cuda.cuh"
+#include "ped_compute_desired_cuda.cuh"
 #include "ped_cuda_agent.cuh"
+#include "ped_move_parallel_struct.h"
 #endif
 
 namespace Ped {
@@ -32,7 +34,19 @@ class Tagent;
 
 // The implementation modes for Assignment 1 + 2:
 // chooses which implementation to use for tick()
-enum IMPLEMENTATION { CUDA, VECTOR, OMP, PTHREAD, SEQ, SEQ_MV, SEQ_MV_HM, OMP_MV, OMP_MV_HM, OMP_MV_HM_SEQ };
+enum IMPLEMENTATION {
+	CUDA,
+	VECTOR,
+	OMP,
+	PTHREAD,
+	SEQ,
+	SEQ_MV,
+	SEQ_MV_HM,
+	OMP_MV,
+	OMP_MV_HM,
+	OMP_MV_HM_SEQ,
+	OMP_MV_HM_BN,
+};
 
 class Model {
   public:
@@ -75,6 +89,9 @@ class Model {
 	struct agents agents_s;
 	struct agents agents_d;
 	std::vector<struct region_s> regions;
+	std::vector<struct region_bn_s> regions_bn;
+	struct dscu_agents_s dscu_agents_h;
+	struct dscu_agents_s dscu_agents_d;
 	struct hmcu_s hmcu;
 	struct hmcu_time_s hmcu_time;
 	double total_hm_time;

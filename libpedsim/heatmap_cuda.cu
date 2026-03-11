@@ -191,3 +191,35 @@ __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu, struct hmcu_time_s *time)
 	blur_heat<<<scaled_blocks, halo_threads_per_block>>>(hmcu->scaled_heatmap, hmcu->blurred_heatmap);
 	cudaEventRecord(time->eblur, 0);
 }
+
+__host__ void
+hmcu_update_heatmap_bn(struct hmcu_s *hmcu, int size, int *des_x, int *des_y, struct hmcu_time_s *time) {
+	static dim3 threads_per_block(THREADS_X, THREADS_Y, 1);
+	static dim3 size_blocks(((SIZE + threads_per_block.x - 1) / threads_per_block.x),
+							((SIZE + threads_per_block.y - 1) / threads_per_block.y),
+							1);
+	cudaEventRecord(time->sfade, 0);
+	fade_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap);
+	cudaEventRecord(time->efade, 0);
+
+	static dim3 des_threads_per_block(PAIRS_THREADS, 1, 1);
+	static dim3 des_blocks(((size + des_threads_per_block.x - 1) / des_threads_per_block.x), 1, 1);
+	cudaEventRecord(time->sinsert, 0);
+	insert_heat<<<des_blocks, des_threads_per_block>>>(hmcu->heatmap, des_x, des_y, size);
+	cudaEventRecord(time->einsert, 0);
+
+	cudaEventRecord(time->scap_scale, 0);
+	cap_scale_heat<<<size_blocks, threads_per_block>>>(hmcu->heatmap, hmcu->scaled_heatmap);
+	cudaEventRecord(time->ecap_scale, 0);
+
+	// hack!
+	// spawn more threads to load global mem into shared easily
+	// excess workers do nothing
+	static dim3 halo_threads_per_block(SHM_X, SHM_Y, 1);
+	static dim3 scaled_blocks(((SCALED_SIZE + threads_per_block.x - 1) / threads_per_block.x),
+							  ((SCALED_SIZE + threads_per_block.y - 1) / threads_per_block.y),
+							  1);
+	cudaEventRecord(time->sblur, 0);
+	blur_heat<<<scaled_blocks, halo_threads_per_block>>>(hmcu->scaled_heatmap, hmcu->blurred_heatmap);
+	cudaEventRecord(time->eblur, 0);
+}

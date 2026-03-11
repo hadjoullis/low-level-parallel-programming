@@ -31,5 +31,7 @@ struct hmcu_time_s {
 __host__ void hmcu_init(struct hmcu_s *hmcu, int agents_size, struct hmcu_time_s *time);
 __host__ void hmcu_dinit(struct hmcu_s *hmcu, struct hmcu_time_s *time);
 __host__ void hmcu_update_heatmap(struct hmcu_s *hmcu, struct hmcu_time_s *time);
+__host__ void
+hmcu_update_heatmap_bn(struct hmcu_s *hmcu, int size, int *des_x, int *des_y, struct hmcu_time_s *time);
 
 #endif
