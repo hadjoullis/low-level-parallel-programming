@@ -76,6 +76,7 @@ void Ped::Model::setup(std::vector<Ped::Tagent *> agentsInScenario,
 		break;
 	case Ped::OMP_MV_HM_BN:
 		printf("Setting up data structures for OMP_MV_HM_BN...\n");
+		cudaStreamCreate(&other_stream);
 		total_hm_time = 0;
 		ticks_cnt = 0;
 		dscu_init(agents, &dscu_agents_h, &dscu_agents_d);
@@ -324,12 +325,9 @@ void Ped::Model::tick() {
 		int CUR_NUM_REGIONS;
 		double start;
 
-#pragma omp parallel default(none) shared(dscu_agents_h, dscu_agents_d, CUR_NUM_REGIONS, regions_bn, start)
+#pragma omp parallel default(none)                                                                           \
+	shared(other_stream, dscu_agents_h, dscu_agents_d, CUR_NUM_REGIONS, regions_bn, start)
 		{
-#pragma omp single nowait
-			{
-				CUR_NUM_REGIONS = mv_parallel_struct_setup_regions(regions_bn, dscu_agents_h.size);
-			}
 #pragma omp single nowait
 			{
 				cudaMemcpy(dscu_agents_d.x,
@@ -341,21 +339,31 @@ void Ped::Model::tick() {
 						   dscu_agents_h.size * sizeof(int),
 						   cudaMemcpyHostToDevice);
 				dscu_compute_next_desired_position(&dscu_agents_d);
-				cudaMemcpy(dscu_agents_h.des_x,
-						   dscu_agents_d.des_x,
-						   dscu_agents_h.size * sizeof(int),
-						   cudaMemcpyDeviceToHost);
-				cudaMemcpy(dscu_agents_h.des_y,
-						   dscu_agents_d.des_y,
-						   dscu_agents_h.size * sizeof(int),
-						   cudaMemcpyDeviceToHost);
+				cudaMemcpyAsync(dscu_agents_h.des_x,
+								dscu_agents_d.des_x,
+								dscu_agents_h.size * sizeof(int),
+								cudaMemcpyDeviceToHost,
+								other_stream);
+				cudaMemcpyAsync(dscu_agents_h.des_y,
+								dscu_agents_d.des_y,
+								dscu_agents_h.size * sizeof(int),
+								cudaMemcpyDeviceToHost,
+								other_stream);
 				start = omp_get_wtime();
 				hmcu_update_heatmap_bn(
 					&hmcu, dscu_agents_h.size, dscu_agents_d.des_x, dscu_agents_d.des_y, &hmcu_time);
 			}
+#pragma omp single
+			{
+				CUR_NUM_REGIONS = mv_parallel_struct_setup_regions(regions_bn, dscu_agents_h.size);
+			} // implicit barrier
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
 				mv_parallel_struct_get_agents_in_region(&dscu_agents_h, &regions_bn[i]);
+			} // implicit barrier
+#pragma omp single
+			{
+				cudaStreamSynchronize(other_stream);
 			} // implicit barrier
 #pragma omp for
 			for (int i = 0; i < CUR_NUM_REGIONS; i++) {
@@ -553,9 +561,10 @@ Ped::Model::~Model() {
 		printf("HM_BN_CUDA_BLUR_TOTAL_TIME: %.6lf seconds\n", hmcu_time.blur);
 		printf("HM_BN_CUDA_BLUR_AVG_TIME: %.6lf seconds\n", hmcu_time.blur / ticks_cnt);
 		printf("Setting up data structures for OMP_MV_HM_BN...\n");
-		dscu_dinit(&dscu_agents_h);
-		hmcu_dinit(&hmcu, &hmcu_time);
-		mv_parallel_struct_regions_dinit();
+		cudaStreamDestroy(other_stream);
+		// hmcu_dinit(&hmcu, &hmcu_time);
+		// dscu_dinit(&dscu_agents_h);
+		// mv_parallel_struct_regions_dinit();
 		printf("Data structures set up for OMP_MV_HM_BN complete.\n");
 		break;
 	case Ped::CUDA:

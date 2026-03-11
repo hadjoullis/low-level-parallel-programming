@@ -215,7 +215,7 @@ void move_parallel_struct(struct region_bn_s *region, struct dscu_agents_s *agen
 	// closer to his desiredPosition, starting with the desiredPosition itself
 	const int global_idx = region->region_agents[agent_idx];
 	struct pair_bn_s prioritizedAlternatives[NUM_ALTERNATIVES] = {0};
-	struct pair_bn_s pDesired = {.x = agents->des_x[global_idx], .y = agents->des_x[global_idx]};
+	struct pair_bn_s pDesired = {.x = agents->des_x[global_idx], .y = agents->des_y[global_idx]};
 	size_t alternatives_cnt = 0;
 	prioritizedAlternatives[alternatives_cnt++] = pDesired;
 
@@ -258,8 +258,8 @@ void move_parallel_struct(struct region_bn_s *region, struct dscu_agents_s *agen
 				leave_border(region, agents, global_idx, desired_x, desired_y);
 			} else {
 				const int prev_x = getX;
-				agents->des_x[global_idx] = desired_x;
-				agents->des_y[global_idx] = desired_y;
+				agents->x[global_idx] = desired_x;
+				agents->y[global_idx] = desired_y;
 				// check prev_x or desired_x, no need to check both
 				// agents outside borders will be handled by the same thread, regardless
 				if (prev_x >= 0 && prev_x <= GRID_WIDTH) {

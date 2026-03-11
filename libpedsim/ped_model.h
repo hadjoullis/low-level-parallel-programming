@@ -62,6 +62,7 @@ class Model {
 	// Returns the agents of this scenario
 	const std::vector<Tagent *> &getAgents() const { return agents; };
 
+	const struct dscu_agents_s *get_dscu_agents_s() const { return &dscu_agents_h; };
 	const struct agents *get_agents_s() const { return &agents_s; };
 	enum IMPLEMENTATION get_implementation() const { return this->implementation; }
 
@@ -90,6 +91,7 @@ class Model {
 	struct agents agents_d;
 	std::vector<struct region_s> regions;
 	std::vector<struct region_bn_s> regions_bn;
+	cudaStream_t other_stream;
 	struct dscu_agents_s dscu_agents_h;
 	struct dscu_agents_s dscu_agents_d;
 	struct hmcu_s hmcu;
