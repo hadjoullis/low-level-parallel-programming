@@ -76,6 +76,7 @@ int main(int argc, char*argv[]) {
             {"omp-mv", no_argument, NULL, '!'},
             {"omp-mv-hm", no_argument, NULL, '@'},
             {"omp-mv-hm-seq", no_argument, NULL, '#'},
+            {"omp-mv-hm-bn", no_argument, NULL, 'b'},
             {"pthread", no_argument, NULL, 'p'},
             {"seq", no_argument, NULL, 'q'},
             {"seq-mv", no_argument, NULL, '?'},
@@ -143,6 +144,11 @@ int main(int argc, char*argv[]) {
                 // Handle --omp-mv-hm-seq
                 std::cout << "Option --omp-mv-hm-seq activated\n";
                 implementation_to_test = Ped::OMP_MV_HM_SEQ;
+                break;
+            case 'b':
+                // Handle --omp-mv-hm-bn
+                std::cout << "Option --omp-mv-hm-bn activated\n";
+                implementation_to_test = Ped::OMP_MV_HM_BN;
                 break;
             case 'p':
                 // Handle --pthread

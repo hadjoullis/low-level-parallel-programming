@@ -341,12 +341,12 @@ void Ped::Model::tick() {
 						   dscu_agents_h.size * sizeof(int),
 						   cudaMemcpyHostToDevice);
 				dscu_compute_next_desired_position(&dscu_agents_d);
-				cudaMemcpy(dscu_agents_d.des_x,
-						   dscu_agents_h.des_x,
+				cudaMemcpy(dscu_agents_h.des_x,
+						   dscu_agents_d.des_x,
 						   dscu_agents_h.size * sizeof(int),
 						   cudaMemcpyDeviceToHost);
-				cudaMemcpy(dscu_agents_d.des_y,
-						   dscu_agents_h.des_y,
+				cudaMemcpy(dscu_agents_h.des_y,
+						   dscu_agents_d.des_y,
 						   dscu_agents_h.size * sizeof(int),
 						   cudaMemcpyDeviceToHost);
 				start = omp_get_wtime();
